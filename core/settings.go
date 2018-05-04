@@ -8,15 +8,17 @@ import (
 	"strings"
 
 	log "github.com/Sirupsen/logrus"
+	"github.com/SpectoLabs/hoverfly/core/middleware"
 )
 
 // Configuration - initial structure of configuration
 type Configuration struct {
 	AdminPort    string
 	ProxyPort    string
+	ListenOnHost string
 	Mode         string
 	Destination  string
-	Middleware   Middleware
+	Middleware   middleware.Middleware
 	DatabasePath string
 	Webserver    bool
 
@@ -24,12 +26,19 @@ type Configuration struct {
 
 	UpstreamProxy string
 
-	Verbose     bool
-	Development bool
+	Verbose bool
+
+	DisableCache bool
 
 	SecretKey          []byte
 	JWTExpirationDelta int
 	AuthEnabled        bool
+
+	ProxyAuthorizationHeader string
+
+	HttpsOnly bool
+
+	PlainHttpTunneling bool
 
 	ProxyControlWG sync.WaitGroup
 
@@ -63,6 +72,8 @@ const DefaultPort = "8500"
 
 // DefaultAdminPort - default admin interface port
 const DefaultAdminPort = "8888"
+
+const DefaultListenOnHost = "127.0.0.1"
 
 // DefaultDatabasePath - default database name that will be created
 // or used by Hoverfly
@@ -112,6 +123,8 @@ func InitSettings() *Configuration {
 		appConfig.ProxyPort = DefaultPort
 	}
 
+	appConfig.ListenOnHost = DefaultListenOnHost
+
 	// getting external proxy
 	if os.Getenv(HoverflyUpstreamProxyPortEV) != "" {
 		appConfig.UpstreamProxy = os.Getenv(HoverflyUpstreamProxyPortEV)
@@ -155,7 +168,7 @@ func InitSettings() *Configuration {
 	}
 
 	// middleware configuration
-	newMiddleware, _ := ConvertToNewMiddleware(os.Getenv(HoverflyMiddlewareEV))
+	newMiddleware, _ := middleware.ConvertToNewMiddleware(os.Getenv(HoverflyMiddlewareEV))
 
 	appConfig.Middleware = *newMiddleware
 
@@ -164,6 +177,10 @@ func InitSettings() *Configuration {
 	} else {
 		appConfig.TLSVerification = true
 	}
+
+	appConfig.Mode = "simulate"
+
+	appConfig.ProxyAuthorizationHeader = "Proxy-Authorization"
 
 	return &appConfig
 }

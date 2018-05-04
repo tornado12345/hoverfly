@@ -45,12 +45,19 @@ func TestSettingsDefaultProxyPort(t *testing.T) {
 	Expect(cfg.ProxyPort).To(Equal(DefaultPort))
 }
 
+func TestSettingsDefaultListenOnHost(t *testing.T) {
+	RegisterTestingT(t)
+
+	cfg := InitSettings()
+	Expect(cfg.ListenOnHost).To(Equal("127.0.0.1"))
+}
+
 func TestSettingsMiddlewareEnv(t *testing.T) {
 	RegisterTestingT(t)
 
 	defer os.Setenv("HoverflyMiddleware", "")
 
-	os.Setenv("HoverflyMiddleware", "ruby examples/middleware/ruby_echo/echo.rb")
+	os.Setenv("HoverflyMiddleware", "ruby ../examples/middleware/modify_response/modify_response.rb")
 	cfg := InitSettings()
 
 	Expect(cfg.Middleware.Binary).To(Equal("ruby"))
@@ -58,7 +65,15 @@ func TestSettingsMiddlewareEnv(t *testing.T) {
 	script, err := cfg.Middleware.GetScript()
 	Expect(err).To(BeNil())
 
-	Expect(script).To(Equal(rubyEcho))
+	Expect(script).To(Equal(rubyModifyResponse))
+}
+
+func Test_InitSettings_SetsModeToSimulate(t *testing.T) {
+	RegisterTestingT(t)
+
+	settings := InitSettings()
+
+	Expect(settings.Mode).To(Equal("simulate"))
 }
 
 // TestSetMode - tests SetMode function, however it doesn't test
@@ -112,4 +127,12 @@ func Test_SetUpstreamProxy_WillNotPrependHttpColonSlashSlashToProxyURLWithHTTPS(
 	unit.SetUpstreamProxy("https://localhost")
 
 	Expect(unit.UpstreamProxy).To(Equal("https://localhost"))
+}
+
+func Test_InitSettings_SetsPlainHttpTunnelingToFalse(t *testing.T) {
+	RegisterTestingT(t)
+
+	settings := InitSettings()
+
+	Expect(settings.PlainHttpTunneling).To(Equal(false))
 }

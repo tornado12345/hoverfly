@@ -1,11 +1,14 @@
 package cmd
 
 import (
-	log "github.com/Sirupsen/logrus"
+	"fmt"
+
+	"github.com/SpectoLabs/hoverfly/hoverctl/configuration"
 	"github.com/SpectoLabs/hoverfly/hoverctl/wrapper"
 	"github.com/spf13/cobra"
 )
 
+var urlPattern string
 var exportCmd = &cobra.Command{
 	Use:   "export [path to simulation]",
 	Short: "Export a simulation from Hoverfly",
@@ -15,16 +18,22 @@ will be written to the file path provided.
 	`,
 
 	Run: func(cmd *cobra.Command, args []string) {
-		simulationData, err := hoverfly.ExportSimulation()
+		checkTargetAndExit(target)
+
+		checkArgAndExit(args, "You have not provided a path to simulation", "export")
+
+		simulationData, err := wrapper.ExportSimulation(*target, urlPattern)
 		handleIfError(err)
 
-		err = wrapper.WriteFile(args[0], simulationData)
+		err = configuration.WriteFile(args[0], simulationData)
 		handleIfError(err)
 
-		log.Info("Successfully exported simulation to ", args[0])
+		fmt.Println("Successfully exported simulation to", args[0])
 	},
 }
 
 func init() {
 	RootCmd.AddCommand(exportCmd)
+
+	exportCmd.Flags().StringVar(&urlPattern, "url-pattern", "", "Export simulation for the urls that matches a pattern, eg. foo.com/api/v(.+)")
 }

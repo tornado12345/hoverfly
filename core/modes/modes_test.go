@@ -15,10 +15,12 @@ func TestReconstructRequest(t *testing.T) {
 	RegisterTestingT(t)
 
 	request := models.RequestDetails{
-		Scheme:      "http",
-		Path:        "/random-path",
-		Method:      "GET",
-		Query:       "?foo=bar",
+		Scheme: "http",
+		Path:   "/random-path",
+		Method: "GET",
+		Query: map[string][]string{
+			"foo": []string{"bar"},
+		},
 		Destination: "test-destination.com",
 	}
 	pair := models.RequestResponsePair{Request: request}
@@ -29,7 +31,29 @@ func TestReconstructRequest(t *testing.T) {
 	Expect(newRequest.Method).To(Equal("GET"))
 	Expect(newRequest.URL.Path).To(Equal("/random-path"))
 	Expect(newRequest.Host).To(Equal("test-destination.com"))
-	Expect(newRequest.URL.RawQuery).To(Equal("?foo=bar"))
+	Expect(newRequest.URL.RawQuery).To(Equal("foo=bar"))
+}
+
+func Test_ReconstructRequest_QueryRequestResponsePair(t *testing.T) {
+	RegisterTestingT(t)
+
+	request := models.RequestDetails{
+		Scheme:      "http",
+		Path:        "/another-path",
+		Method:      "GET",
+		Destination: "test-destination.com",
+		Query: map[string][]string{
+			"key": {"value 1", "value 2"},
+		},
+	}
+	pair := models.RequestResponsePair{Request: request}
+
+	newRequest, err := modes.ReconstructRequest(pair)
+
+	Expect(err).To(BeNil())
+	Expect(newRequest.Host).To(Equal("test-destination.com"))
+	Expect(newRequest.URL.RawQuery).To(Equal("key=value%201&key=value%202"))
+
 }
 
 func Test_ReconstructRequest_BodyRequestResponsePair(t *testing.T) {
@@ -39,7 +63,6 @@ func Test_ReconstructRequest_BodyRequestResponsePair(t *testing.T) {
 		Scheme:      "http",
 		Path:        "/another-path",
 		Method:      "POST",
-		Query:       "",
 		Destination: "test-destination.com",
 		Body:        "new request body here",
 	}
@@ -66,7 +89,6 @@ func Test_ReconstructRequest_HeadersInPair(t *testing.T) {
 		Scheme:      "http",
 		Path:        "/another-path",
 		Method:      "POST",
-		Query:       "",
 		Destination: "test-destination.com",
 		Body:        "new request body here",
 		Headers: map[string][]string{
@@ -133,6 +155,25 @@ func Test_ReconstructResponse_AddsHeadersToResponse(t *testing.T) {
 	Expect(response.Header.Get("Header")).To(Equal(headers["Header"][0]))
 }
 
+func Test_ReconstructResponse_AddsHeadersWithCorrectCapitalization(t *testing.T) {
+	RegisterTestingT(t)
+
+	req, _ := http.NewRequest("GET", "http://example.com", nil)
+
+	pair := models.RequestResponsePair{}
+
+	headers := make(map[string][]string)
+	headers["HeaderOne"] = []string{"one"}
+	headers["HEADERTWO"] = []string{"two"}
+
+	pair.Response.Headers = headers
+
+	response := modes.ReconstructResponse(req, pair)
+
+	Expect(response.Header["HeaderOne"]).To(Equal([]string{"one"}))
+	Expect(response.Header["HEADERTWO"]).To(Equal([]string{"two"}))
+}
+
 func Test_ReconstructResponse_AddsMultipleHeaderValuesToResponse(t *testing.T) {
 	RegisterTestingT(t)
 
@@ -153,6 +194,23 @@ func Test_ReconstructResponse_AddsMultipleHeaderValuesToResponse(t *testing.T) {
 	Expect(values[0]).To(Equal("one"))
 	Expect(values[1]).To(Equal("two"))
 	Expect(values[2]).To(Equal("three"))
+}
+
+func Test_ReconstructResponse_MakesACopyOfTheHeadersWithoutReusingTheSamePointer(t *testing.T) {
+	RegisterTestingT(t)
+
+	req, _ := http.NewRequest("GET", "http://example.com", nil)
+
+	pair := models.RequestResponsePair{}
+
+	headers := make(http.Header)
+	headers["Header"] = []string{"one", "two", "three"}
+
+	pair.Response.Headers = headers
+
+	response := modes.ReconstructResponse(req, pair)
+
+	Expect(response.Header).ToNot(BeIdenticalTo(headers))
 }
 
 func Test_ReconstructResponse_CanReturnACompleteHttpResponseWithAllFieldsFilled(t *testing.T) {

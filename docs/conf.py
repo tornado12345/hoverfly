@@ -19,7 +19,7 @@ copyright = u'2017, SpectoLabs'
 author = u'SpectoLabs'
 
 
-version = 'v0.10.1'
+version = 'v0.16.0'
 # The full version, including alpha/beta/rc tags.
 release = version
 
@@ -30,6 +30,7 @@ extlinks = {'zip_bundle_os_arch': (zip_base_url + 'hoverfly_bundle_%s.zip', 'zip
 language = None
 
 exclude_patterns = ['_build']
+
 
 pygments_style = 'sphinx'
 
@@ -49,6 +50,7 @@ html_context = {
             '_static/theme_overrides.css',   
         ],
     }
+
 
 htmlhelp_basename = 'hoverflydoc'
 

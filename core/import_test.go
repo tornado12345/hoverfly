@@ -2,19 +2,21 @@ package hoverfly
 
 import (
 	"encoding/base64"
-	"github.com/SpectoLabs/hoverfly/core/cache"
-	"github.com/SpectoLabs/hoverfly/core/handlers/v1"
-	"github.com/SpectoLabs/hoverfly/core/matching"
-	"github.com/SpectoLabs/hoverfly/core/models"
-	. "github.com/SpectoLabs/hoverfly/core/util"
-	. "github.com/onsi/gomega"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
-	"github.com/SpectoLabs/hoverfly/core/interfaces"
+
+	"github.com/SpectoLabs/hoverfly/core/cache"
+	"github.com/SpectoLabs/hoverfly/core/handlers/v2"
+	"github.com/SpectoLabs/hoverfly/core/matching"
+	"github.com/SpectoLabs/hoverfly/core/models"
+	. "github.com/SpectoLabs/hoverfly/core/util"
+	. "github.com/onsi/gomega"
 )
+
+const hoverfly_io_simulation_path = "../examples/simulations/hoverfly.io.json"
 
 func TestIsURLHTTP(t *testing.T) {
 	RegisterTestingT(t)
@@ -62,9 +64,7 @@ func TestIsURLWrongTLD(t *testing.T) {
 func TestFileExists(t *testing.T) {
 	RegisterTestingT(t)
 
-	fp := "examples/exports/readthedocs.json"
-
-	ex, err := exists(fp)
+	ex, err := exists(hoverfly_io_simulation_path)
 	Expect(err).To(BeNil())
 	Expect(ex).To(BeTrue())
 }
@@ -84,15 +84,11 @@ func TestImportFromDisk(t *testing.T) {
 
 	server, dbClient := testTools(201, `{'message': 'here'}`)
 	defer server.Close()
-	defer dbClient.RequestCache.DeleteData()
 
-	err := dbClient.Import("examples/exports/readthedocs.json")
+	err := dbClient.Import(hoverfly_io_simulation_path)
 	Expect(err).To(BeNil())
 
-	recordsCount, err := dbClient.RequestCache.RecordsCount()
-	Expect(err).To(BeNil())
-
-	Expect(recordsCount).To(Equal(5))
+	Expect(dbClient.Simulation.GetMatchingPairs()).To(HaveLen(2))
 }
 
 func TestImportFromDiskBlankPath(t *testing.T) {
@@ -100,7 +96,6 @@ func TestImportFromDiskBlankPath(t *testing.T) {
 
 	server, dbClient := testTools(201, `{'message': 'here'}`)
 	defer server.Close()
-	defer dbClient.RequestCache.DeleteData()
 
 	err := dbClient.ImportFromDisk("")
 	Expect(err).ToNot(BeNil())
@@ -111,7 +106,6 @@ func TestImportFromDiskWrongJson(t *testing.T) {
 
 	server, dbClient := testTools(201, `{'message': 'here'}`)
 	defer server.Close()
-	defer dbClient.RequestCache.DeleteData()
 
 	err := dbClient.ImportFromDisk("examples/exports/README.md")
 	Expect(err).ToNot(BeNil())
@@ -121,7 +115,7 @@ func TestImportFromURL(t *testing.T) {
 	RegisterTestingT(t)
 
 	// reading file and preparing json payload
-	pairFile, err := os.Open("examples/exports/readthedocs.json")
+	pairFile, err := os.Open(hoverfly_io_simulation_path)
 	Expect(err).To(BeNil())
 	pairFileBytes, err := ioutil.ReadAll(pairFile)
 	Expect(err).To(BeNil())
@@ -129,22 +123,19 @@ func TestImportFromURL(t *testing.T) {
 	// pretending this is the endpoint with given json
 	server, dbClient := testTools(200, string(pairFileBytes))
 	defer server.Close()
-	defer dbClient.RequestCache.DeleteData()
 
 	// importing payloads
 	err = dbClient.Import(server.URL)
 	Expect(err).To(BeNil())
 
-	recordsCount, err := dbClient.RequestCache.RecordsCount()
-	Expect(err).To(BeNil())
-	Expect(recordsCount).To(Equal(5))
+	Expect(dbClient.Simulation.GetMatchingPairs()).To(HaveLen(2))
 }
 
 func TestImportFromURLRedirect(t *testing.T) {
 	RegisterTestingT(t)
 
 	// reading file and preparing json payload
-	pairFile, err := os.Open("examples/exports/readthedocs.json")
+	pairFile, err := os.Open(hoverfly_io_simulation_path)
 	Expect(err).To(BeNil())
 	pairFileBytes, err := ioutil.ReadAll(pairFile)
 	Expect(err).To(BeNil())
@@ -152,7 +143,6 @@ func TestImportFromURLRedirect(t *testing.T) {
 	// pretending this is the endpoint with given json
 	server, dbClient := testTools(200, string(pairFileBytes))
 	defer server.Close()
-	defer dbClient.RequestCache.DeleteData()
 
 	dbClient.HTTP = GetDefaultHoverflyHTTPClient(false, "")
 
@@ -166,9 +156,7 @@ func TestImportFromURLRedirect(t *testing.T) {
 	err = dbClient.Import(redirectServer.URL)
 	Expect(err).To(BeNil())
 
-	recordsCount, err := dbClient.RequestCache.RecordsCount()
-	Expect(err).To(BeNil())
-	Expect(recordsCount).To(Equal(5))
+	Expect(dbClient.Simulation.GetMatchingPairs()).To(HaveLen(2))
 }
 
 func TestImportFromURLHTTPFail(t *testing.T) {
@@ -178,7 +166,6 @@ func TestImportFromURLHTTPFail(t *testing.T) {
 	server, dbClient := testTools(200, `this shouldn't matter anyway`)
 	// closing it immediately
 	server.Close()
-	defer dbClient.RequestCache.DeleteData()
 
 	err := dbClient.ImportFromURL("somepath")
 	Expect(err).ToNot(BeNil())
@@ -190,7 +177,6 @@ func TestImportFromURLMalformedJSON(t *testing.T) {
 	// testing behaviour when there is no json on the other end
 	server, dbClient := testTools(200, `i am not json :(`)
 	defer server.Close()
-	defer dbClient.RequestCache.DeleteData()
 
 	// importing payloads
 	err := dbClient.Import("http://thiswillbeintercepted.json")
@@ -203,204 +189,256 @@ func TestImportRequestResponsePairs_CanImportASinglePair(t *testing.T) {
 
 	cache := cache.NewInMemoryCache()
 	cfg := Configuration{Webserver: false}
-	requestMatcher := matching.RequestMatcher{RequestCache: cache, Webserver: &cfg.Webserver}
-	hv := Hoverfly{RequestCache: cache, Cfg: &cfg, RequestMatcher: requestMatcher}
+	cacheMatcher := matching.CacheMatcher{RequestCache: cache, Webserver: cfg.Webserver}
+	hv := Hoverfly{Cfg: &cfg, CacheMatcher: cacheMatcher, Simulation: models.NewSimulation()}
 
 	RegisterTestingT(t)
 
-	originalPair := v1.RequestResponsePairView{
-		Response: v1.ResponseDetailsView{
+	originalPair := v2.RequestMatcherResponsePairViewV4{
+		Response: v2.ResponseDetailsViewV4{
 			Status:      200,
 			Body:        "hello_world",
 			EncodedBody: false,
-			Headers:     map[string][]string{"Content-Type": []string{"text/plain"}}},
-		Request: v1.RequestDetailsView{
-			Path:        StringToPointer("/"),
-			Method:      StringToPointer("GET"),
-			Destination: StringToPointer("/"),
-			Scheme:      StringToPointer("scheme"),
-			Query:       StringToPointer(""),
-			Body:        StringToPointer(""),
-			Headers:     map[string][]string{"Hoverfly": []string{"testing"}}}}
-
-	hv.ImportRequestResponsePairViews([]interfaces.RequestResponsePair{originalPair})
-	value, _ := cache.Get([]byte("9b114df98da7f7e2afdc975883dab4f2"))
-	decodedPair, _ := models.NewRequestResponsePairFromBytes(value)
-	Expect(*decodedPair).To(Equal(models.RequestResponsePair{
-		Response: models.ResponseDetails{
-			Status:  200,
-			Body:    "hello_world",
-			Headers: map[string][]string{"Content-Type": []string{"text/plain"}},
+			Headers:     map[string][]string{"Content-Type": []string{"text/plain"}},
+			Templated:   true,
 		},
-		Request: models.RequestDetails{
-			Path:        "/",
-			Method:      "GET",
-			Destination: "/",
-			Scheme:      "scheme",
-			Query:       "", Body: "",
+		RequestMatcher: v2.RequestMatcherViewV4{
+			Path: &v2.RequestFieldMatchersView{
+				ExactMatch: StringToPointer("/"),
+			},
+			Method: &v2.RequestFieldMatchersView{
+				ExactMatch: StringToPointer("GET"),
+			},
+			Destination: &v2.RequestFieldMatchersView{
+				ExactMatch: StringToPointer("/"),
+			},
+			Scheme: &v2.RequestFieldMatchersView{
+				ExactMatch: StringToPointer("scheme"),
+			},
+			Query: &v2.RequestFieldMatchersView{
+				ExactMatch: StringToPointer(""),
+			},
+			Body: &v2.RequestFieldMatchersView{
+				ExactMatch: StringToPointer(""),
+			},
+			Headers: map[string][]string{"Hoverfly": []string{"testing"}}}}
+
+	hv.ImportRequestResponsePairViews([]v2.RequestMatcherResponsePairViewV4{originalPair})
+
+	Expect(hv.Simulation.GetMatchingPairs()[0]).To(Equal(models.RequestMatcherResponsePair{
+		Response: models.ResponseDetails{
+			Status:    200,
+			Body:      "hello_world",
+			Headers:   map[string][]string{"Content-Type": []string{"text/plain"}},
+			Templated: true,
+		},
+		RequestMatcher: models.RequestMatcher{
+			Path: &models.RequestFieldMatchers{
+				ExactMatch: StringToPointer("/"),
+			},
+			Method: &models.RequestFieldMatchers{
+				ExactMatch: StringToPointer("GET"),
+			},
+			Destination: &models.RequestFieldMatchers{
+				ExactMatch: StringToPointer("/"),
+			},
+			Scheme: &models.RequestFieldMatchers{
+				ExactMatch: StringToPointer("scheme"),
+			},
+			Query: &models.RequestFieldMatchers{
+				ExactMatch: StringToPointer(""),
+			},
+			Body: &models.RequestFieldMatchers{
+				ExactMatch: StringToPointer(""),
+			},
 			Headers: map[string][]string{
-				"Content-Type": []string{"text/plain; charset=utf-8"},
-				"Hoverfly":     []string{"testing"},
+				"Hoverfly": []string{"testing"},
 			},
 		},
 	}))
 }
 
-func TestImportImportRequestResponsePairs_CanImportAMultiplePairs(t *testing.T) {
+func TestImportImportRequestResponsePairs_CanImportAMultiplePairsAndSetTemplateExplicitlyOrExplicitly(t *testing.T) {
 	RegisterTestingT(t)
 
 	cache := cache.NewInMemoryCache()
 	cfg := Configuration{Webserver: false}
-	requestMatcher := matching.RequestMatcher{RequestCache: cache, Webserver: &cfg.Webserver}
-	hv := Hoverfly{RequestCache: cache, Cfg: &cfg, RequestMatcher: requestMatcher}
+	cacheMatcher := matching.CacheMatcher{RequestCache: cache, Webserver: cfg.Webserver}
+	hv := Hoverfly{Cfg: &cfg, CacheMatcher: cacheMatcher, Simulation: models.NewSimulation()}
 
 	RegisterTestingT(t)
 
-	originalPair1 := v1.RequestResponsePairView{
-		Response: v1.ResponseDetailsView{
+	originalPair1 := v2.RequestMatcherResponsePairViewV4{
+		Response: v2.ResponseDetailsViewV4{
 			Status:      200,
 			Body:        "hello_world",
 			EncodedBody: false,
 			Headers:     map[string][]string{"Hoverfly": []string{"testing"}},
 		},
-		Request: v1.RequestDetailsView{
-			Path:        StringToPointer("/"),
-			Method:      StringToPointer("GET"),
-			Destination: StringToPointer("/"),
-			Scheme:      StringToPointer("scheme"),
-			Query:       StringToPointer(""),
-			Body:        StringToPointer(""),
-			Headers:     map[string][]string{"Hoverfly": []string{"testing"}}}}
+		RequestMatcher: v2.RequestMatcherViewV4{
+			Path: &v2.RequestFieldMatchersView{
+				ExactMatch: StringToPointer("/"),
+			},
+			Method: &v2.RequestFieldMatchersView{
+				ExactMatch: StringToPointer("GET"),
+			},
+			Destination: &v2.RequestFieldMatchersView{
+				ExactMatch: StringToPointer("/"),
+			},
+			Scheme: &v2.RequestFieldMatchersView{
+				ExactMatch: StringToPointer("scheme"),
+			},
+			Query: &v2.RequestFieldMatchersView{
+				ExactMatch: StringToPointer(""),
+			},
+			Body: &v2.RequestFieldMatchersView{
+				ExactMatch: StringToPointer(""),
+			},
+			Headers: map[string][]string{"Hoverfly": []string{"testing"}}}}
 
 	originalPair2 := originalPair1
-	originalPair2.Request.Path = StringToPointer("/new/path")
+	originalPair2.Response.Templated = false
+	originalPair2.RequestMatcher.Path = &v2.RequestFieldMatchersView{
+		ExactMatch: StringToPointer("/new/path"),
+	}
 
 	originalPair3 := originalPair1
-	originalPair3.Request.Path = StringToPointer("/newer/path")
+	originalPair3.RequestMatcher.Path = &v2.RequestFieldMatchersView{
+		ExactMatch: StringToPointer("/newer/path"),
+	}
+	originalPair3.Response.Templated = true
 
-	hv.ImportRequestResponsePairViews([]interfaces.RequestResponsePair{originalPair1, originalPair2, originalPair3})
+	hv.ImportRequestResponsePairViews([]v2.RequestMatcherResponsePairViewV4{originalPair1, originalPair2, originalPair3})
 
-	pairBytes, err := cache.Get([]byte("9b114df98da7f7e2afdc975883dab4f2"))
-	Expect(err).To(BeNil())
-	decodedPair1, err := models.NewRequestResponsePairFromBytes(pairBytes)
-	Expect(err).To(BeNil())
-	Expect(*decodedPair1).To(Equal(models.NewRequestResponsePairFromRequestResponsePairView(originalPair1)))
+	Expect(hv.Simulation.GetMatchingPairs()).To(HaveLen(3))
+	Expect(hv.Simulation.GetMatchingPairs()[0]).To(Equal(models.RequestMatcherResponsePair{
+		Response: models.ResponseDetails{
+			Status:    200,
+			Body:      "hello_world",
+			Headers:   map[string][]string{"Hoverfly": []string{"testing"}},
+			Templated: false,
+		},
+		RequestMatcher: models.RequestMatcher{
+			Path: &models.RequestFieldMatchers{
+				ExactMatch: StringToPointer("/"),
+			},
+			Method: &models.RequestFieldMatchers{
+				ExactMatch: StringToPointer("GET"),
+			},
+			Destination: &models.RequestFieldMatchers{
+				ExactMatch: StringToPointer("/"),
+			},
+			Scheme: &models.RequestFieldMatchers{
+				ExactMatch: StringToPointer("scheme"),
+			},
+			Query: &models.RequestFieldMatchers{
+				ExactMatch: StringToPointer(""),
+			},
+			Body: &models.RequestFieldMatchers{
+				ExactMatch: StringToPointer(""),
+			},
+			Headers: map[string][]string{"Hoverfly": []string{"testing"}},
+		},
+	}))
 
-	pairBytes, err = cache.Get([]byte("9c03e4af1f30542ff079a712bddad602"))
-	Expect(err).To(BeNil())
-	decodedPair2, err := models.NewRequestResponsePairFromBytes(pairBytes)
-	Expect(err).To(BeNil())
-	Expect(*decodedPair2).To(Equal(models.NewRequestResponsePairFromRequestResponsePairView(originalPair2)))
+	Expect(hv.Simulation.GetMatchingPairs()[1]).To(Equal(models.RequestMatcherResponsePair{
+		Response: models.ResponseDetails{
+			Status:    200,
+			Body:      "hello_world",
+			Headers:   map[string][]string{"Hoverfly": []string{"testing"}},
+			Templated: false,
+		},
+		RequestMatcher: models.RequestMatcher{
+			Path: &models.RequestFieldMatchers{
+				ExactMatch: StringToPointer("/new/path"),
+			},
+			Method: &models.RequestFieldMatchers{
+				ExactMatch: StringToPointer("GET"),
+			},
+			Destination: &models.RequestFieldMatchers{
+				ExactMatch: StringToPointer("/"),
+			},
+			Scheme: &models.RequestFieldMatchers{
+				ExactMatch: StringToPointer("scheme"),
+			},
+			Query: &models.RequestFieldMatchers{
+				ExactMatch: StringToPointer(""),
+			},
+			Body: &models.RequestFieldMatchers{
+				ExactMatch: StringToPointer(""),
+			},
+			Headers: map[string][]string{"Hoverfly": []string{"testing"}},
+		},
+	}))
 
-	pairBytes, err = cache.Get([]byte("fd099332afee48101edb7441b098cd4a"))
-	Expect(err).To(BeNil())
-	decodedPair3, err := models.NewRequestResponsePairFromBytes(pairBytes)
-	Expect(err).To(BeNil())
-	Expect(*decodedPair3).To(Equal(models.NewRequestResponsePairFromRequestResponsePairView(originalPair3)))
+	Expect(hv.Simulation.GetMatchingPairs()[2]).To(Equal(models.RequestMatcherResponsePair{
+		Response: models.ResponseDetails{
+			Status:    200,
+			Body:      "hello_world",
+			Headers:   map[string][]string{"Hoverfly": []string{"testing"}},
+			Templated: true,
+		},
+		RequestMatcher: models.RequestMatcher{
+			Path: &models.RequestFieldMatchers{
+				ExactMatch: StringToPointer("/newer/path"),
+			},
+			Method: &models.RequestFieldMatchers{
+				ExactMatch: StringToPointer("GET"),
+			},
+			Destination: &models.RequestFieldMatchers{
+				ExactMatch: StringToPointer("/"),
+			},
+			Scheme: &models.RequestFieldMatchers{
+				ExactMatch: StringToPointer("scheme"),
+			},
+			Query: &models.RequestFieldMatchers{
+				ExactMatch: StringToPointer(""),
+			},
+			Body: &models.RequestFieldMatchers{
+				ExactMatch: StringToPointer(""),
+			},
+			Headers: map[string][]string{"Hoverfly": []string{"testing"}},
+		},
+	}))
 }
 
-func TestImportImportRequestResponsePairs_CanImportARequestTemplateResponsePair(t *testing.T) {
+func TestImportImportRequestResponsePairs_CanImportARequesResponsePairView(t *testing.T) {
 	RegisterTestingT(t)
 
 	cache := cache.NewInMemoryCache()
 	cfg := Configuration{Webserver: false}
-	requestMatcher := matching.RequestMatcher{RequestCache: cache, Webserver: &cfg.Webserver}
-	hv := Hoverfly{RequestCache: cache, Cfg: &cfg, RequestMatcher: requestMatcher}
+	cacheMatcher := matching.CacheMatcher{RequestCache: cache, Webserver: cfg.Webserver}
+	hv := Hoverfly{Cfg: &cfg, CacheMatcher: cacheMatcher, Simulation: models.NewSimulation()}
 
 	RegisterTestingT(t)
 
-	requestTemplate := v1.RequestDetailsView{
-		RequestType: StringToPointer("template"),
-		Method:      StringToPointer("GET"),
+	request := v2.RequestMatcherViewV4{
+		Method: &v2.RequestFieldMatchersView{
+			ExactMatch: StringToPointer("GET"),
+		},
 	}
 
-	responseView := v1.ResponseDetailsView{
+	responseView := v2.ResponseDetailsViewV4{
 		Status:      200,
 		Body:        "hello_world",
 		EncodedBody: false,
 		Headers:     map[string][]string{"Hoverfly": []string{"testing"}},
 	}
 
-	templatePair := v1.RequestResponsePairView{
-		Response: responseView,
-		Request:  requestTemplate,
+	requestResponsePair := v2.RequestMatcherResponsePairViewV4{
+		Response:       responseView,
+		RequestMatcher: request,
 	}
 
-	hv.ImportRequestResponsePairViews([]interfaces.RequestResponsePair{templatePair})
+	hv.ImportRequestResponsePairViews([]v2.RequestMatcherResponsePairViewV4{requestResponsePair})
 
-	Expect(len(hv.RequestMatcher.TemplateStore)).To(Equal(1))
+	Expect(len(hv.Simulation.GetMatchingPairs())).To(Equal(1))
 
-	request := models.NewRequestDetailsFromRequest(requestTemplate)
-	responseFromCache, err := hv.RequestMatcher.TemplateStore.GetResponse(request, false)
-	Expect(err).To(BeNil())
+	Expect(hv.Simulation.GetMatchingPairs()[0].RequestMatcher.Method.ExactMatch).To(Equal(StringToPointer("GET")))
 
-	response := models.NewResponseDetailsFromResponse(responseView)
-
-	Expect(*responseFromCache).To(Equal(response))
-}
-
-func TestImportImportRequestResponsePairs_CanImportARequestResponsePair_AndRequestTemplateResponsePair(t *testing.T) {
-	RegisterTestingT(t)
-
-	cache := cache.NewInMemoryCache()
-	cfg := Configuration{Webserver: false}
-	requestMatcher := matching.RequestMatcher{RequestCache: cache, Webserver: &cfg.Webserver}
-	hv := Hoverfly{RequestCache: cache, Cfg: &cfg, RequestMatcher: requestMatcher}
-
-	RegisterTestingT(t)
-
-	requestTemplate := v1.RequestDetailsView{
-		RequestType: StringToPointer("template"),
-		Method:      StringToPointer("GET"),
-	}
-
-	requestView := v1.RequestDetailsView{
-		Method:      StringToPointer("GET"),
-		Path:        StringToPointer("/"),
-		Destination: StringToPointer("test.com"),
-		Scheme:      StringToPointer("http"),
-	}
-
-	responseView := v1.ResponseDetailsView{
-		Status:      200,
-		Body:        "hello_world",
-		EncodedBody: false,
-		Headers:     map[string][]string{"Hoverfly": []string{"testing"}},
-	}
-
-	templatePair := v1.RequestResponsePairView{
-		Request:  requestTemplate,
-		Response: responseView,
-	}
-
-	ordinaryPair := v1.RequestResponsePairView{
-		Request:  requestView,
-		Response: responseView,
-	}
-
-	hv.ImportRequestResponsePairViews([]interfaces.RequestResponsePair{templatePair, ordinaryPair})
-
-	cacheCount, err := hv.RequestCache.RecordsCount()
-	Expect(cacheCount).To(Equal(1))
-	Expect(err).To(BeNil())
-
-	Expect(len(hv.RequestMatcher.TemplateStore)).To(Equal(1))
-
-	request := models.NewRequestDetailsFromRequest(requestTemplate)
-	response := models.NewResponseDetailsFromResponse(responseView)
-
-	pairBytes, err := hv.RequestCache.Get([]byte("76cf08e38439f083de2658b0971df9bf"))
-	Expect(err).To(BeNil())
-
-	savedPair, err := models.NewRequestResponsePairFromBytes(pairBytes)
-	Expect(err).To(BeNil())
-
-	Expect(savedPair.Response).To(Equal(response))
-
-	responseFromCache, err := hv.RequestMatcher.TemplateStore.GetResponse(request, false)
-	Expect(err).To(BeNil())
-	Expect(*responseFromCache).To(Equal(response))
-
+	Expect(hv.Simulation.GetMatchingPairs()[0].Response.Status).To(Equal(200))
+	Expect(hv.Simulation.GetMatchingPairs()[0].Response.Body).To(Equal("hello_world"))
+	Expect(hv.Simulation.GetMatchingPairs()[0].Response.Headers).To(Equal(map[string][]string{"Hoverfly": []string{"testing"}}))
 }
 
 // Helper function for base64 encoding
@@ -413,35 +451,47 @@ func TestImportImportRequestResponsePairs_CanImportASingleBase64EncodedPair(t *t
 
 	cache := cache.NewInMemoryCache()
 	cfg := Configuration{Webserver: false}
-	requestMatcher := matching.RequestMatcher{RequestCache: cache, Webserver: &cfg.Webserver}
-	hv := Hoverfly{RequestCache: cache, Cfg: &cfg, RequestMatcher: requestMatcher}
+	cacheMatcher := matching.CacheMatcher{RequestCache: cache, Webserver: cfg.Webserver}
+	hv := Hoverfly{Cfg: &cfg, CacheMatcher: cacheMatcher, Simulation: models.NewSimulation()}
 
 	RegisterTestingT(t)
 
-	encodedPair := v1.RequestResponsePairView{
-		Response: v1.ResponseDetailsView{
+	encodedPair := v2.RequestMatcherResponsePairViewV4{
+		Response: v2.ResponseDetailsViewV4{
 			Status:      200,
 			Body:        base64String("hello_world"),
 			EncodedBody: true,
 			Headers:     map[string][]string{"Content-Encoding": []string{"gzip"}}},
-		Request: v1.RequestDetailsView{
-			Path:        StringToPointer("/"),
-			Method:      StringToPointer("GET"),
-			Destination: StringToPointer("/"),
-			Scheme:      StringToPointer("scheme"),
-			Query:       StringToPointer(""),
-			Body:        StringToPointer(""),
-			Headers:     map[string][]string{"Hoverfly": []string{"testing"}}}}
+		RequestMatcher: v2.RequestMatcherViewV4{
+			Path: &v2.RequestFieldMatchersView{
+				ExactMatch: StringToPointer("/"),
+			},
+			Method: &v2.RequestFieldMatchersView{
+				ExactMatch: StringToPointer("GET"),
+			},
+			Destination: &v2.RequestFieldMatchersView{
+				ExactMatch: StringToPointer("/"),
+			},
+			Scheme: &v2.RequestFieldMatchersView{
+				ExactMatch: StringToPointer("scheme"),
+			},
+			Query: &v2.RequestFieldMatchersView{
+				ExactMatch: StringToPointer(""),
+			},
+			Body: &v2.RequestFieldMatchersView{
+				ExactMatch: StringToPointer(""),
+			},
+			Headers: map[string][]string{
+				"Hoverfly": []string{
+					"testing",
+				},
+			},
+		},
+	}
 
-	hv.ImportRequestResponsePairViews([]interfaces.RequestResponsePair{encodedPair})
+	hv.ImportRequestResponsePairViews([]v2.RequestMatcherResponsePairViewV4{encodedPair})
 
-	value, err := cache.Get([]byte("9b114df98da7f7e2afdc975883dab4f2"))
-	Expect(err).To(BeNil())
-
-	decodedPair, err := models.NewRequestResponsePairFromBytes(value)
-	Expect(err).To(BeNil())
-
-	Expect(decodedPair).ToNot(Equal(models.RequestResponsePair{
+	Expect(hv.Simulation.GetMatchingPairs()[0]).ToNot(Equal(models.RequestResponsePair{
 		Response: models.ResponseDetails{
 			Status:  200,
 			Body:    "hello_world",
@@ -451,6 +501,7 @@ func TestImportImportRequestResponsePairs_CanImportASingleBase64EncodedPair(t *t
 			Method:      "GET",
 			Destination: "/",
 			Scheme:      "scheme",
-			Query:       "", Body: "",
-			Headers: map[string][]string{"Hoverfly": []string{"testing"}}}}))
+			Query:       map[string][]string{},
+			Body:        "",
+			Headers:     map[string][]string{"Hoverfly": []string{"testing"}}}}))
 }

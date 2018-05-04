@@ -1,7 +1,9 @@
 package cmd
 
 import (
-	log "github.com/Sirupsen/logrus"
+	"fmt"
+
+	"github.com/SpectoLabs/hoverfly/hoverctl/configuration"
 	"github.com/SpectoLabs/hoverfly/hoverctl/wrapper"
 	"github.com/spf13/cobra"
 )
@@ -19,17 +21,19 @@ must be provided.
 	`,
 
 	Run: func(cmd *cobra.Command, args []string) {
-		simulationData, err := wrapper.ReadFile(args[0])
+		checkTargetAndExit(target)
+
+		checkArgAndExit(args, "You have not provided a path to simulation", "import")
+		simulationData, err := configuration.ReadFile(args[0])
 		handleIfError(err)
 
-		err = hoverfly.ImportSimulation(string(simulationData), importV1)
+		err = wrapper.ImportSimulation(*target, string(simulationData))
 		handleIfError(err)
 
-		log.Info("Successfully imported simulation from ", args[0])
+		fmt.Println("Successfully imported simulation from", args[0])
 	},
 }
 
 func init() {
 	RootCmd.AddCommand(importCmd)
-	importCmd.Flags().BoolVar(&importV1, "v1", false, "Tells Hoverfly that the simulation is formatted according to the old v1 simulation JSON schema used in Hoverfly pre v0.9.0")
 }

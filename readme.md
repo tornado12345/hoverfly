@@ -1,8 +1,9 @@
+![Hoverfly](https://raw.githubusercontent.com/SpectoLabs/hoverfly/master/hoverfly_logo.png)
+
 [![Circle CI][CircleCI-Image]][CircleCI-Url] 
 [![Documentation Status](https://readthedocs.org/projects/hoverfly/badge/?version=latest)](http://hoverfly.readthedocs.io/en/latest/?badge=latest)
 [![Join the chat at https://gitter.im/SpectoLabs/hoverfly](https://badges.gitter.im/SpectoLabs/hoverfly.svg)](https://gitter.im/SpectoLabs/hoverfly?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
-![Hoverfly](core/static/img/hoverfly_logo.png)
 ## API simulations for development and testing
 
 Hoverfly is a lightweight, open source API simulation tool. Using Hoverfly, you can create realistic simulations of the APIs your application depends on.
@@ -24,6 +25,9 @@ Hoverfly is developed and maintained by [SpectoLabs](https://specto.io).
 * [Read the docs](https://hoverfly.readthedocs.io)
 * [Join the mailing list](https://groups.google.com/a/specto.io/forum/#!forum/hoverfly)
 
+## Hoverfly Cloud
+
+Hoverfly Cloud - API simulations as a service. [Sign up for the private beta.](https://hoverfly.io/hoverfly-cloud)
 
 ## Contributing
 
@@ -41,25 +45,49 @@ To contribute, please:
 
 To read more about forking model, check out this link: [forking workflow](https://www.atlassian.com/git/tutorials/comparing-workflows/forking-workflow).
 
-## Building, running & testing
 
-```bash
-cd $GOPATH/src
-mkdir -p github.com/SpectoLabs/
-cd github.com/SpectoLabs/
-git clone https://github.com/SpectoLabs/hoverfly.git
-# or: git clone https://github.com/<your_username>/hoverfly.git
-cd hoverfly
-make build
-```
+## Setup for local development
+
+### Build
+1. Install Go. You should follow the download and installation instructions for your OS from [official Go website](https://golang.org/dl). If you have installed Go before 
+using either `apt-get` or `homebrew`, you should uninstall those first.
+1. After the installation, find out the `GOPATH` using `go env`, and then setup a source folder there
+
+    ```bash
+    mkdir $GOPATH/src
+    ```
+1. Clone the hoverfly project into your Go source folder:
+    ```bash
+    cd $GOPATH/src
+    mkdir -p github.com/SpectoLabs/
+    cd github.com/SpectoLabs/
+    git clone https://github.com/SpectoLabs/hoverfly.git
+    # or: git clone https://github.com/<your_username>/hoverfly.git
+    ```
+1. Finally you can run the build
+
+    ```bash
+    cd hoverfly
+    make build 
+    ```
 
 Notice the binaries are in the ``target`` directory.
 
-Finally to test your build:
+
+### Test
+
+You should be able to execute all unit and functional tests with: 
 
 ```bash
 make test
 ```
+
+Some middleware tests may fail if you don't have `ruby` and `python` setup in your environment. If you are using Mac, you can install them with [Homebrew](https://brew.sh/):
+```bash
+brew install ruby
+brew install python
+``` 
+
 
 ## License
 

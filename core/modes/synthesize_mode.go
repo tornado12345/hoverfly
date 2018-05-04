@@ -7,6 +7,7 @@ import (
 	"github.com/SpectoLabs/hoverfly/core/models"
 
 	log "github.com/Sirupsen/logrus"
+	"github.com/SpectoLabs/hoverfly/core/handlers/v2"
 )
 
 type HoverflySynthesize interface {
@@ -16,6 +17,14 @@ type HoverflySynthesize interface {
 
 type SynthesizeMode struct {
 	Hoverfly HoverflySynthesize
+}
+
+func (this *SynthesizeMode) SetArguments(arguments ModeArguments) {}
+
+func (this *SynthesizeMode) View() v2.ModeView {
+	return v2.ModeView{
+		Mode: Synthesize,
+	}
 }
 
 func (this SynthesizeMode) Process(request *http.Request, details models.RequestDetails) (*http.Response, error) {

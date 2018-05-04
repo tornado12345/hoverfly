@@ -1,15 +1,9 @@
-package hoverctl_end_to_end
+package hoverctl_suite
 
 import (
-	"fmt"
-	"io/ioutil"
-	"os"
-	"path/filepath"
 	"strconv"
-	"strings"
 
 	"github.com/SpectoLabs/hoverfly/functional-tests"
-	"github.com/dghubble/sling"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/phayes/freeport"
@@ -23,77 +17,62 @@ var _ = Describe("When I use hoverctl", func() {
 	)
 
 	BeforeEach(func() {
-		WriteConfiguration("localhost", adminPort, proxyPort)
+		functional_tests.Run(hoverctlBinary, "targets", "create", "local", "--admin-port", adminPort, "--proxy-port", proxyPort)
 	})
 
 	AfterEach(func() {
-		functional_tests.Run(hoverctlBinary, "stop", "--admin-port="+adminPort, "--proxy-port="+proxyPort)
+		functional_tests.Run(hoverctlBinary, "stop")
 	})
 
-	Context("I can get the logs using the log command", func() {
+	Context("I can get the logs using the log command in JSON format", func() {
 
 		It("should return the logs", func() {
 			functional_tests.Run(hoverctlBinary, "start", "--admin-port="+adminPort, "--proxy-port="+proxyPort)
 
-			output := functional_tests.Run(hoverctlBinary, "logs", "--admin-port="+adminPort, "--proxy-port="+proxyPort)
+			output := functional_tests.Run(hoverctlBinary, "logs", "--json")
 
-			Expect(output).To(ContainSubstring("listening on :" + adminPort))
+			Expect(output).To(ContainSubstring(`"Destination":".","Mode":"simulate","ProxyPort":"` + proxyPort + `","level":"info","msg":"Proxy prepared..."`))
 		})
 
 		It("should return an error if the logs don't exist", func() {
 			functional_tests.Run(hoverctlBinary, "start", "--admin-port="+adminPort, "--proxy-port="+proxyPort)
+			functional_tests.Run(hoverctlBinary, "targets", "create", "incorrect", "--admin-port", "12345", "--proxy-port", "65432")
 
-			output := functional_tests.Run(hoverctlBinary, "logs", "--admin-port=hotdogs", "--proxy-port=burgers")
+			output := functional_tests.Run(hoverctlBinary, "logs", "--json", "-t", "incorrect")
 
-			Expect(output).To(ContainSubstring("Could not open Hoverfly log file"))
+			Expect(output).To(ContainSubstring("Could not connect to Hoverfly at localhost:12345"))
 		})
 	})
 
-	Context("and start Hoverfly using hoverctl", func() {
+	Context("I can get the logs using the log command in plaintext format", func() {
 
-		Context("the logs get captured in a .log file", func() {
+		It("should return the logs", func() {
+			functional_tests.Run(hoverctlBinary, "start", "--admin-port="+adminPort, "--proxy-port="+proxyPort)
 
-			It("and I can see it has started", func() {
-				functional_tests.Run(hoverctlBinary, "start", "--admin-port="+adminPort, "--proxy-port="+proxyPort)
+			output := functional_tests.Run(hoverctlBinary, "logs")
 
-				workingDir, _ := os.Getwd()
-				filePath := filepath.Join(workingDir, ".hoverfly/", "hoverfly."+adminPort+"."+proxyPort+".log")
+			Expect(output).To(ContainSubstring("Proxy prepared..."))
+			Expect(output).To(ContainSubstring("=."))
+			Expect(output).To(ContainSubstring("=simulate"))
+			Expect(output).To(ContainSubstring("=" + proxyPort))
+		})
 
-				file, err := ioutil.ReadFile(filePath)
-				Expect(err).To(BeNil())
+		It("should return an error if the logs don't exist", func() {
+			functional_tests.Run(hoverctlBinary, "start", "--admin-port="+adminPort, "--proxy-port="+proxyPort)
+			functional_tests.Run(hoverctlBinary, "targets", "create", "incorrect", "--admin-port", "12345", "--proxy-port", "65432")
 
-				Expect(string(file)).To(ContainSubstring("listening on :" + adminPort))
-			})
+			output := functional_tests.Run(hoverctlBinary, "logs", "-t", "incorrect")
 
-			It("and they get updated when you use hoverfly", func() {
-				functional_tests.Run(hoverctlBinary, "start", "--admin-port="+adminPort, "--proxy-port="+proxyPort)
+			Expect(output).To(ContainSubstring("Could not connect to Hoverfly at localhost:12345"))
+		})
+	})
 
-				functional_tests.Run(hoverctlBinary, "mode", "capture")
+	Context("with a target that doesn't exist", func() {
+		It("should error", func() {
+			output := functional_tests.Run(hoverctlBinary, "logs", "--target", "test-target")
 
-				workingDir, _ := os.Getwd()
-				filePath := filepath.Join(workingDir, ".hoverfly/", "hoverfly."+adminPort+"."+proxyPort+".log")
-
-				file, err := ioutil.ReadFile(filePath)
-				Expect(err).To(BeNil())
-
-				Expect(string(file)).To(ContainSubstring("Started GET /api/v2/hoverfly/mode"))
-			})
-
-			It("and the stderr is captured in the log file", func() {
-				functional_tests.Run(hoverctlBinary, "start", "--admin-port="+adminPort, "--proxy-port="+proxyPort)
-
-				req := sling.New().Post(fmt.Sprintf("http://localhost:%v/api/state", adminPort)).Body(strings.NewReader(`{"mode":"not-a-mode"}`))
-				functional_tests.DoRequest(req)
-
-				workingDir, _ := os.Getwd()
-				filePath := filepath.Join(workingDir, ".hoverfly/", "hoverfly."+adminPort+"."+proxyPort+".log")
-
-				file, err := ioutil.ReadFile(filePath)
-				Expect(err).To(BeNil())
-
-				Expect(string(file)).To(ContainSubstring("Wrong mode found, can't change state"))
-				Expect(string(file)).To(ContainSubstring("not-a-mode"))
-			})
+			Expect(output).To(ContainSubstring("test-target is not a target"))
+			Expect(output).To(ContainSubstring("Run `hoverctl targets create test-target`"))
 		})
 	})
 })

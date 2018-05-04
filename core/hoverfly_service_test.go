@@ -1,12 +1,14 @@
 package hoverfly
 
 import (
+	"encoding/json"
+	"io/ioutil"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/SpectoLabs/hoverfly/core/handlers/v1"
 	"github.com/SpectoLabs/hoverfly/core/handlers/v2"
-	"github.com/SpectoLabs/hoverfly/core/matching"
 	"github.com/SpectoLabs/hoverfly/core/models"
 	"github.com/SpectoLabs/hoverfly/core/util"
 	"github.com/gorilla/mux"
@@ -14,24 +16,28 @@ import (
 )
 
 var (
-	pairOneRecording = v2.RequestResponsePairView{
-		Request: v2.RequestDetailsView{
-			RequestType: util.StringToPointer("recording"),
-			Destination: util.StringToPointer("test.com"),
-			Path:        util.StringToPointer("/testing"),
+	pairOne = v2.RequestMatcherResponsePairViewV4{
+		RequestMatcher: v2.RequestMatcherViewV4{
+			Destination: &v2.RequestFieldMatchersView{
+				ExactMatch: util.StringToPointer("test.com"),
+			},
+			Path: &v2.RequestFieldMatchersView{
+				ExactMatch: util.StringToPointer("/testing"),
+			},
 		},
-		Response: v2.ResponseDetailsView{
+		Response: v2.ResponseDetailsViewV4{
 			Body: "test-body",
 		},
 	}
 
-	pairOneTemplate = v2.RequestResponsePairView{
-		Request: v2.RequestDetailsView{
-			RequestType: util.StringToPointer("template"),
-			Path:        util.StringToPointer("/template"),
+	pairTwo = v2.RequestMatcherResponsePairViewV4{
+		RequestMatcher: v2.RequestMatcherViewV4{
+			Path: &v2.RequestFieldMatchersView{
+				ExactMatch: util.StringToPointer("/path"),
+			},
 		},
-		Response: v2.ResponseDetailsView{
-			Body: "template-body",
+		Response: v2.ResponseDetailsViewV4{
+			Body: "pair2-body",
 		},
 	}
 
@@ -47,145 +53,129 @@ var (
 	}
 )
 
+func processHandlerOkay(w http.ResponseWriter, r *http.Request) {
+	body, _ := ioutil.ReadAll(r.Body)
+
+	var newPairView v2.RequestResponsePairViewV1
+
+	json.Unmarshal(body, &newPairView)
+
+	newPairView.Response.Body = "You got straight up messed with"
+
+	pairViewBytes, _ := json.Marshal(newPairView)
+	w.Write(pairViewBytes)
+}
+
 func TestHoverflyGetSimulationReturnsBlankSimulation_ifThereIsNoData(t *testing.T) {
 	RegisterTestingT(t)
 
-	server, unit := testTools(201, `{'message': 'here'}`)
-	defer server.Close()
+	unit := NewHoverflyWithConfiguration(&Configuration{})
 
 	simulation, err := unit.GetSimulation()
 	Expect(err).To(BeNil())
 
-	Expect(simulation.DataView.RequestResponsePairs).To(HaveLen(0))
-	Expect(simulation.DataView.GlobalActions.Delays).To(HaveLen(0))
+	Expect(simulation.RequestResponsePairs).To(HaveLen(0))
+	Expect(simulation.GlobalActions.Delays).To(HaveLen(0))
 
-	Expect(simulation.MetaView.SchemaVersion).To(Equal("v1"))
+	Expect(simulation.MetaView.SchemaVersion).To(Equal("v4"))
 	Expect(simulation.MetaView.HoverflyVersion).To(MatchRegexp(`v\d+.\d+.\d+`))
 	Expect(simulation.MetaView.TimeExported).ToNot(BeNil())
 }
 
-func TestHoverfly_GetSimulation_ReturnsASingleRequestResponsePairRecording(t *testing.T) {
+func TestHoverfly_GetSimulation_ReturnsASingleRequestResponsePair(t *testing.T) {
 	RegisterTestingT(t)
 
-	server, unit := testTools(201, `{'message': 'here'}`)
-	defer server.Close()
+	unit := NewHoverflyWithConfiguration(&Configuration{})
 
-	recording := models.RequestResponsePair{
-		Request: models.RequestDetails{
-			Destination: "testhost.com",
-			Path:        "/test",
+	unit.Simulation.AddRequestMatcherResponsePair(&models.RequestMatcherResponsePair{
+		RequestMatcher: models.RequestMatcher{
+			Destination: &models.RequestFieldMatchers{
+				ExactMatch: util.StringToPointer("test.com"),
+			},
 		},
 		Response: models.ResponseDetails{
 			Status: 200,
-			Body:   "test",
-		},
-	}
-
-	recordingBytes, err := recording.Encode()
-	Expect(err).To(BeNil())
-
-	unit.RequestCache.Set([]byte("key"), recordingBytes)
-
-	simulation, err := unit.GetSimulation()
-	Expect(err).To(BeNil())
-
-	Expect(simulation.DataView.RequestResponsePairs).To(HaveLen(1))
-
-	Expect(*simulation.DataView.RequestResponsePairs[0].Request.RequestType).To(Equal("recording"))
-	Expect(*simulation.DataView.RequestResponsePairs[0].Request.Destination).To(Equal("testhost.com"))
-	Expect(*simulation.DataView.RequestResponsePairs[0].Request.Path).To(Equal("/test"))
-
-	Expect(simulation.DataView.RequestResponsePairs[0].Response.Status).To(Equal(200))
-	Expect(simulation.DataView.RequestResponsePairs[0].Response.Body).To(Equal("test"))
-
-	Expect(nil).To(BeNil())
-}
-
-func TestHoverfly_GetSimulation_ReturnsASingleRequestResponsePairTemplate(t *testing.T) {
-	RegisterTestingT(t)
-
-	server, unit := testTools(201, `{'message': 'here'}`)
-	defer server.Close()
-
-	unit.RequestMatcher.TemplateStore = append(unit.RequestMatcher.TemplateStore, matching.RequestTemplateResponsePair{
-		RequestTemplate: matching.RequestTemplate{
-			Destination: util.StringToPointer("test.com"),
-		},
-		Response: models.ResponseDetails{
-			Status: 200,
-			Body:   "test-template",
+			Body:   "test-body",
 		},
 	})
 
 	simulation, err := unit.GetSimulation()
 	Expect(err).To(BeNil())
 
-	Expect(simulation.DataView.RequestResponsePairs).To(HaveLen(1))
+	Expect(simulation.DataViewV4.RequestResponsePairs).To(HaveLen(1))
 
-	Expect(*simulation.DataView.RequestResponsePairs[0].Request.RequestType).To(Equal("template"))
-	Expect(*simulation.DataView.RequestResponsePairs[0].Request.Destination).To(Equal("test.com"))
-	Expect(simulation.DataView.RequestResponsePairs[0].Request.Path).To(BeNil())
-	Expect(simulation.DataView.RequestResponsePairs[0].Request.Method).To(BeNil())
-	Expect(simulation.DataView.RequestResponsePairs[0].Request.Query).To(BeNil())
-	Expect(simulation.DataView.RequestResponsePairs[0].Request.Scheme).To(BeNil())
-	Expect(simulation.DataView.RequestResponsePairs[0].Request.Headers).To(HaveLen(0))
+	Expect(*simulation.RequestResponsePairs[0].RequestMatcher.Destination.ExactMatch).To(Equal("test.com"))
+	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Path).To(BeNil())
+	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Method).To(BeNil())
+	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Query).To(BeNil())
+	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Scheme).To(BeNil())
+	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Headers).To(HaveLen(0))
 
-	Expect(simulation.DataView.RequestResponsePairs[0].Response.Status).To(Equal(200))
-	Expect(simulation.DataView.RequestResponsePairs[0].Response.EncodedBody).To(BeFalse())
-	Expect(simulation.DataView.RequestResponsePairs[0].Response.Body).To(Equal("test-template"))
-	Expect(simulation.DataView.RequestResponsePairs[0].Response.Headers).To(HaveLen(0))
+	Expect(simulation.RequestResponsePairs[0].Response.Status).To(Equal(200))
+	Expect(simulation.RequestResponsePairs[0].Response.EncodedBody).To(BeFalse())
+	Expect(simulation.RequestResponsePairs[0].Response.Body).To(Equal("test-body"))
+	Expect(simulation.RequestResponsePairs[0].Response.Headers).To(HaveLen(0))
 
 	Expect(nil).To(BeNil())
 }
 
-func TestHoverflyGetSimulationReturnsMultipleRequestResponsePairs(t *testing.T) {
+func Test_Hoverfly_GetSimulation_ReturnsMultipleRequestResponsePairs(t *testing.T) {
 	RegisterTestingT(t)
 
-	server, unit := testTools(201, `{'message': 'here'}`)
-	defer server.Close()
+	unit := NewHoverflyWithConfiguration(&Configuration{})
 
-	recording := models.RequestResponsePair{
-		Request: models.RequestDetails{
-			Destination: "testhost.com",
-			Path:        "/test",
+	unit.Simulation.AddRequestMatcherResponsePair(&models.RequestMatcherResponsePair{
+		RequestMatcher: models.RequestMatcher{
+			Destination: &models.RequestFieldMatchers{
+				ExactMatch: util.StringToPointer("testhost-0.com"),
+			},
+			Path: &models.RequestFieldMatchers{
+				ExactMatch: util.StringToPointer("/test"),
+			},
 		},
 		Response: models.ResponseDetails{
 			Status: 200,
 			Body:   "test",
 		},
-	}
+	})
 
-	recordingBytes, err := recording.Encode()
-	Expect(err).To(BeNil())
-
-	unit.RequestCache.Set([]byte("key"), recordingBytes)
-	unit.RequestCache.Set([]byte("key2"), recordingBytes)
+	unit.Simulation.AddRequestMatcherResponsePair(&models.RequestMatcherResponsePair{
+		RequestMatcher: models.RequestMatcher{
+			Destination: &models.RequestFieldMatchers{
+				ExactMatch: util.StringToPointer("testhost-1.com"),
+			},
+			Path: &models.RequestFieldMatchers{
+				ExactMatch: util.StringToPointer("/test"),
+			},
+		},
+		Response: models.ResponseDetails{
+			Status: 200,
+			Body:   "test",
+		},
+	})
 
 	simulation, err := unit.GetSimulation()
 	Expect(err).To(BeNil())
 
-	Expect(simulation.DataView.RequestResponsePairs).To(HaveLen(2))
+	Expect(simulation.DataViewV4.RequestResponsePairs).To(HaveLen(2))
 
-	Expect(*simulation.DataView.RequestResponsePairs[0].Request.Destination).To(Equal("testhost.com"))
-	Expect(*simulation.DataView.RequestResponsePairs[0].Request.Path).To(Equal("/test"))
-	Expect(*simulation.DataView.RequestResponsePairs[0].Request.RequestType).To(Equal("recording"))
+	Expect(*simulation.DataViewV4.RequestResponsePairs[0].RequestMatcher.Destination.ExactMatch).To(Equal("testhost-0.com"))
+	Expect(*simulation.DataViewV4.RequestResponsePairs[0].RequestMatcher.Path.ExactMatch).To(Equal("/test"))
 
-	Expect(simulation.DataView.RequestResponsePairs[0].Response.Status).To(Equal(200))
-	Expect(simulation.DataView.RequestResponsePairs[0].Response.Body).To(Equal("test"))
+	Expect(simulation.DataViewV4.RequestResponsePairs[0].Response.Status).To(Equal(200))
+	Expect(simulation.DataViewV4.RequestResponsePairs[0].Response.Body).To(Equal("test"))
 
-	Expect(*simulation.DataView.RequestResponsePairs[1].Request.Destination).To(Equal("testhost.com"))
-	Expect(*simulation.DataView.RequestResponsePairs[1].Request.Path).To(Equal("/test"))
-	Expect(*simulation.DataView.RequestResponsePairs[1].Request.RequestType).To(Equal("recording"))
+	Expect(*simulation.DataViewV4.RequestResponsePairs[1].RequestMatcher.Destination.ExactMatch).To(Equal("testhost-1.com"))
+	Expect(*simulation.DataViewV4.RequestResponsePairs[1].RequestMatcher.Path.ExactMatch).To(Equal("/test"))
 
-	Expect(simulation.DataView.RequestResponsePairs[1].Response.Status).To(Equal(200))
-	Expect(simulation.DataView.RequestResponsePairs[1].Response.Body).To(Equal("test"))
+	Expect(simulation.DataViewV4.RequestResponsePairs[1].Response.Status).To(Equal(200))
+	Expect(simulation.DataViewV4.RequestResponsePairs[1].Response.Body).To(Equal("test"))
 }
 
 func TestHoverflyGetSimulationReturnsMultipleDelays(t *testing.T) {
 	RegisterTestingT(t)
 
-	server, unit := testTools(201, `{'message': 'here'}`)
-	defer server.Close()
+	unit := NewHoverflyWithConfiguration(&Configuration{})
 
 	delay1 := models.ResponseDelay{
 		UrlPattern: "test-pattern",
@@ -199,36 +189,190 @@ func TestHoverflyGetSimulationReturnsMultipleDelays(t *testing.T) {
 
 	responseDelays := models.ResponseDelayList{delay1, delay2}
 
-	unit.ResponseDelays = &responseDelays
+	unit.Simulation.ResponseDelays = &responseDelays
 
 	simulation, err := unit.GetSimulation()
 	Expect(err).To(BeNil())
 
-	Expect(simulation.DataView.GlobalActions.Delays).To(HaveLen(2))
+	Expect(simulation.DataViewV4.GlobalActions.Delays).To(HaveLen(2))
 
-	Expect(simulation.DataView.GlobalActions.Delays[0].UrlPattern).To(Equal("test-pattern"))
-	Expect(simulation.DataView.GlobalActions.Delays[0].HttpMethod).To(Equal(""))
-	Expect(simulation.DataView.GlobalActions.Delays[0].Delay).To(Equal(100))
+	Expect(simulation.DataViewV4.GlobalActions.Delays[0].UrlPattern).To(Equal("test-pattern"))
+	Expect(simulation.DataViewV4.GlobalActions.Delays[0].HttpMethod).To(Equal(""))
+	Expect(simulation.DataViewV4.GlobalActions.Delays[0].Delay).To(Equal(100))
 
-	Expect(simulation.DataView.GlobalActions.Delays[1].UrlPattern).To(Equal(""))
-	Expect(simulation.DataView.GlobalActions.Delays[1].HttpMethod).To(Equal("test"))
-	Expect(simulation.DataView.GlobalActions.Delays[1].Delay).To(Equal(200))
+	Expect(simulation.DataViewV4.GlobalActions.Delays[1].UrlPattern).To(Equal(""))
+	Expect(simulation.DataViewV4.GlobalActions.Delays[1].HttpMethod).To(Equal("test"))
+	Expect(simulation.DataViewV4.GlobalActions.Delays[1].Delay).To(Equal(200))
+}
+
+func TestHoverfly_GetFilteredSimulation_WithPlainTextUrlQuery(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := NewHoverflyWithConfiguration(&Configuration{})
+
+	unit.Simulation.AddRequestMatcherResponsePair(&models.RequestMatcherResponsePair{
+		RequestMatcher: models.RequestMatcher{
+			Destination: &models.RequestFieldMatchers{
+				ExactMatch: util.StringToPointer("foo.com"),
+			},
+		},
+	})
+
+	unit.Simulation.AddRequestMatcherResponsePair(&models.RequestMatcherResponsePair{
+		RequestMatcher: models.RequestMatcher{
+			Destination: &models.RequestFieldMatchers{
+				ExactMatch: util.StringToPointer("bar.com"),
+			},
+		},
+	})
+
+	simulation, err := unit.GetFilteredSimulation("bar.com")
+	Expect(err).To(BeNil())
+
+	Expect(simulation.DataViewV4.RequestResponsePairs).To(HaveLen(1))
+
+	Expect(*simulation.RequestResponsePairs[0].RequestMatcher.Destination.ExactMatch).To(Equal("bar.com"))
+}
+
+func TestHoverfly_GetFilteredSimulation_WithRegexUrlQuery(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := NewHoverflyWithConfiguration(&Configuration{})
+
+	unit.Simulation.AddRequestMatcherResponsePair(&models.RequestMatcherResponsePair{
+		RequestMatcher: models.RequestMatcher{
+			Destination: &models.RequestFieldMatchers{
+				ExactMatch: util.StringToPointer("foo.com"),
+			},
+		},
+	})
+
+	unit.Simulation.AddRequestMatcherResponsePair(&models.RequestMatcherResponsePair{
+		RequestMatcher: models.RequestMatcher{
+			Destination: &models.RequestFieldMatchers{
+				ExactMatch: util.StringToPointer("test-1.com"),
+			},
+		},
+	})
+
+	unit.Simulation.AddRequestMatcherResponsePair(&models.RequestMatcherResponsePair{
+		RequestMatcher: models.RequestMatcher{
+			Destination: &models.RequestFieldMatchers{
+				ExactMatch: util.StringToPointer("test-2.com"),
+			},
+		},
+	})
+
+	simulation, err := unit.GetFilteredSimulation("test-(.+).com")
+	Expect(err).To(BeNil())
+
+	Expect(simulation.DataViewV4.RequestResponsePairs).To(HaveLen(2))
+
+	Expect(*simulation.RequestResponsePairs[0].RequestMatcher.Destination.ExactMatch).To(Equal("test-1.com"))
+	Expect(*simulation.RequestResponsePairs[1].RequestMatcher.Destination.ExactMatch).To(Equal("test-2.com"))
+}
+
+func TestHoverfly_GetFilteredSimulationReturnBlankSimulation_IfThereIsNoMatch(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := NewHoverflyWithConfiguration(&Configuration{})
+
+	unit.Simulation.AddRequestMatcherResponsePair(&models.RequestMatcherResponsePair{
+		RequestMatcher: models.RequestMatcher{
+			Destination: &models.RequestFieldMatchers{
+				ExactMatch: util.StringToPointer("foo.com"),
+			},
+		},
+	})
+
+	simulation, err := unit.GetFilteredSimulation("test-(.+).com")
+	Expect(err).To(BeNil())
+
+	Expect(simulation.RequestResponsePairs).To(HaveLen(0))
+	Expect(simulation.GlobalActions.Delays).To(HaveLen(0))
+
+	Expect(simulation.MetaView.SchemaVersion).To(Equal("v4"))
+	Expect(simulation.MetaView.HoverflyVersion).To(MatchRegexp(`v\d+.\d+.\d+`))
+	Expect(simulation.MetaView.TimeExported).ToNot(BeNil())
+}
+
+func TestHoverfly_GetFilteredSimulationReturnError_OnInvalidRegexQuery(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := NewHoverflyWithConfiguration(&Configuration{})
+
+	unit.Simulation.AddRequestMatcherResponsePair(&models.RequestMatcherResponsePair{
+		RequestMatcher: models.RequestMatcher{
+			Destination: &models.RequestFieldMatchers{
+				ExactMatch: util.StringToPointer("foo.com"),
+			},
+		},
+	})
+
+	_, err := unit.GetFilteredSimulation("test-(.+.com")
+	Expect(err).NotTo(BeNil())
+}
+
+func TestHoverfly_GetFilteredSimulation_WithUrlQueryContainingPath(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := NewHoverflyWithConfiguration(&Configuration{})
+
+	unit.Simulation.AddRequestMatcherResponsePair(&models.RequestMatcherResponsePair{
+		RequestMatcher: models.RequestMatcher{
+			Destination: &models.RequestFieldMatchers{
+				ExactMatch: util.StringToPointer("foo.com"),
+			},
+			Path: &models.RequestFieldMatchers{
+				ExactMatch: util.StringToPointer("/api/v1"),
+			},
+		},
+	})
+
+	unit.Simulation.AddRequestMatcherResponsePair(&models.RequestMatcherResponsePair{
+		RequestMatcher: models.RequestMatcher{
+			Destination: &models.RequestFieldMatchers{
+				ExactMatch: util.StringToPointer("foo.com"),
+			},
+			Path: &models.RequestFieldMatchers{
+				ExactMatch: util.StringToPointer("/api/v2"),
+			},
+		},
+	})
+
+	unit.Simulation.AddRequestMatcherResponsePair(&models.RequestMatcherResponsePair{
+		RequestMatcher: models.RequestMatcher{
+			Destination: &models.RequestFieldMatchers{
+				ExactMatch: util.StringToPointer("bar.com"),
+			},
+			Path: &models.RequestFieldMatchers{
+				ExactMatch: util.StringToPointer("/api/v1"),
+			},
+		},
+	})
+
+	simulation, err := unit.GetFilteredSimulation("foo.com/api/v1")
+	Expect(err).To(BeNil())
+
+	Expect(simulation.DataViewV4.RequestResponsePairs).To(HaveLen(1))
+
+	Expect(*simulation.RequestResponsePairs[0].RequestMatcher.Destination.ExactMatch).To(Equal("foo.com"))
+	Expect(*simulation.RequestResponsePairs[0].RequestMatcher.Path.ExactMatch).To(Equal("/api/v1"))
 }
 
 func TestHoverfly_PutSimulation_ImportsRecordings(t *testing.T) {
 	RegisterTestingT(t)
 
-	server, unit := testTools(201, `{'message': 'here'}`)
-	defer server.Close()
+	unit := NewHoverflyWithConfiguration(&Configuration{})
 
-	simulationToImport := v2.SimulationView{
-		DataView: v2.DataView{
-			RequestResponsePairs: []v2.RequestResponsePairView{pairOneRecording},
+	simulationToImport := v2.SimulationViewV4{
+		v2.DataViewV4{
+			RequestResponsePairs: []v2.RequestMatcherResponsePairViewV4{pairOne},
 			GlobalActions: v2.GlobalActionsView{
 				Delays: []v1.ResponseDelayView{},
 			},
 		},
-		MetaView: v2.MetaView{},
+		v2.MetaView{},
 	}
 
 	unit.PutSimulation(simulationToImport)
@@ -241,27 +385,25 @@ func TestHoverfly_PutSimulation_ImportsRecordings(t *testing.T) {
 	Expect(importedSimulation.RequestResponsePairs).ToNot(BeNil())
 	Expect(importedSimulation.RequestResponsePairs).To(HaveLen(1))
 
-	Expect(importedSimulation.RequestResponsePairs[0].Request.RequestType).To(Equal(util.StringToPointer("recording")))
-	Expect(importedSimulation.RequestResponsePairs[0].Request.Destination).To(Equal(util.StringToPointer("test.com")))
-	Expect(importedSimulation.RequestResponsePairs[0].Request.Path).To(Equal(util.StringToPointer("/testing")))
+	Expect(importedSimulation.RequestResponsePairs[0].RequestMatcher.Destination.ExactMatch).To(Equal(util.StringToPointer("test.com")))
+	Expect(importedSimulation.RequestResponsePairs[0].RequestMatcher.Path.ExactMatch).To(Equal(util.StringToPointer("/testing")))
 
 	Expect(importedSimulation.RequestResponsePairs[0].Response.Body).To(Equal("test-body"))
 }
 
-func TestHoverfly_PutSimulation_ImportsTemplates(t *testing.T) {
+func TestHoverfly_PutSimulation_ImportsSimulationViews(t *testing.T) {
 	RegisterTestingT(t)
 
-	server, unit := testTools(201, `{'message': 'here'}`)
-	defer server.Close()
+	unit := NewHoverflyWithConfiguration(&Configuration{})
 
-	simulationToImport := v2.SimulationView{
-		DataView: v2.DataView{
-			RequestResponsePairs: []v2.RequestResponsePairView{pairOneTemplate},
+	simulationToImport := v2.SimulationViewV4{
+		v2.DataViewV4{
+			RequestResponsePairs: []v2.RequestMatcherResponsePairViewV4{pairTwo},
 			GlobalActions: v2.GlobalActionsView{
 				Delays: []v1.ResponseDelayView{},
 			},
 		},
-		MetaView: v2.MetaView{},
+		v2.MetaView{},
 	}
 
 	unit.PutSimulation(simulationToImport)
@@ -274,72 +416,31 @@ func TestHoverfly_PutSimulation_ImportsTemplates(t *testing.T) {
 	Expect(importedSimulation.RequestResponsePairs).ToNot(BeNil())
 	Expect(importedSimulation.RequestResponsePairs).To(HaveLen(1))
 
-	Expect(importedSimulation.RequestResponsePairs[0].Request.RequestType).To(Equal(util.StringToPointer("template")))
-	Expect(importedSimulation.RequestResponsePairs[0].Request.Destination).To(BeNil())
-	Expect(importedSimulation.RequestResponsePairs[0].Request.Path).To(Equal(util.StringToPointer("/template")))
+	Expect(importedSimulation.RequestResponsePairs[0].RequestMatcher.Destination).To(BeNil())
+	Expect(importedSimulation.RequestResponsePairs[0].RequestMatcher.Path.ExactMatch).To(Equal(util.StringToPointer("/path")))
 
-	Expect(importedSimulation.RequestResponsePairs[0].Response.Body).To(Equal("template-body"))
-}
-
-func TestHoverfly_PutSimulation_ImportsRecordingsAndTemplates(t *testing.T) {
-	RegisterTestingT(t)
-
-	server, unit := testTools(201, `{'message': 'here'}`)
-	defer server.Close()
-
-	simulationToImport := v2.SimulationView{
-		DataView: v2.DataView{
-			RequestResponsePairs: []v2.RequestResponsePairView{pairOneRecording, pairOneTemplate},
-			GlobalActions: v2.GlobalActionsView{
-				Delays: []v1.ResponseDelayView{},
-			},
-		},
-		MetaView: v2.MetaView{},
-	}
-
-	unit.PutSimulation(simulationToImport)
-
-	importedSimulation, err := unit.GetSimulation()
-	Expect(err).To(BeNil())
-
-	Expect(importedSimulation).ToNot(BeNil())
-
-	Expect(importedSimulation.RequestResponsePairs).ToNot(BeNil())
-	Expect(importedSimulation.RequestResponsePairs).To(HaveLen(2))
-
-	Expect(importedSimulation.RequestResponsePairs[0].Request.RequestType).To(Equal(util.StringToPointer("recording")))
-	Expect(importedSimulation.RequestResponsePairs[0].Request.Destination).To(Equal(util.StringToPointer("test.com")))
-	Expect(importedSimulation.RequestResponsePairs[0].Request.Path).To(Equal(util.StringToPointer("/testing")))
-
-	Expect(importedSimulation.RequestResponsePairs[0].Response.Body).To(Equal("test-body"))
-
-	Expect(importedSimulation.RequestResponsePairs[1].Request.RequestType).To(Equal(util.StringToPointer("template")))
-	Expect(importedSimulation.RequestResponsePairs[1].Request.Destination).To(BeNil())
-	Expect(importedSimulation.RequestResponsePairs[1].Request.Path).To(Equal(util.StringToPointer("/template")))
-
-	Expect(importedSimulation.RequestResponsePairs[1].Response.Body).To(Equal("template-body"))
+	Expect(importedSimulation.RequestResponsePairs[0].Response.Body).To(Equal("pair2-body"))
 }
 
 func TestHoverfly_PutSimulation_ImportsDelays(t *testing.T) {
 	RegisterTestingT(t)
 
-	server, unit := testTools(201, `{'message': 'here'}`)
-	defer server.Close()
+	unit := NewHoverflyWithConfiguration(&Configuration{})
 
-	simulationToImport := v2.SimulationView{
-		DataView: v2.DataView{
-			RequestResponsePairs: []v2.RequestResponsePairView{},
+	simulationToImport := v2.SimulationViewV4{
+		v2.DataViewV4{
+			RequestResponsePairs: []v2.RequestMatcherResponsePairViewV4{},
 			GlobalActions: v2.GlobalActionsView{
 				Delays: []v1.ResponseDelayView{delayOne, delayTwo},
 			},
 		},
-		MetaView: v2.MetaView{},
+		v2.MetaView{},
 	}
 
 	err := unit.PutSimulation(simulationToImport)
 	Expect(err).To(BeNil())
 
-	delays := unit.ResponseDelays.ConvertToResponseDelayPayloadView()
+	delays := unit.Simulation.ResponseDelays.ConvertToResponseDelayPayloadView()
 	Expect(delays).ToNot(BeNil())
 
 	Expect(delays.Data).To(HaveLen(2))
@@ -356,7 +457,7 @@ func TestHoverfly_PutSimulation_ImportsDelays(t *testing.T) {
 func Test_Hoverfly_GetMiddleware_ReturnsCorrectValuesFromMiddleware(t *testing.T) {
 	RegisterTestingT(t)
 
-	_, unit := testTools(201, `{'message': 'here'}`)
+	unit := NewHoverflyWithConfiguration(&Configuration{})
 	unit.Cfg.Middleware.SetBinary("python")
 	unit.Cfg.Middleware.SetScript(pythonMiddlewareBasic)
 
@@ -369,7 +470,7 @@ func Test_Hoverfly_GetMiddleware_ReturnsCorrectValuesFromMiddleware(t *testing.T
 func Test_Hoverfly_GetMiddleware_ReturnsEmptyStringsWhenNeitherIsSet(t *testing.T) {
 	RegisterTestingT(t)
 
-	_, unit := testTools(201, `{'message': 'here'}`)
+	unit := NewHoverflyWithConfiguration(&Configuration{})
 
 	binary, script, remote := unit.GetMiddleware()
 	Expect(binary).To(Equal(""))
@@ -380,7 +481,7 @@ func Test_Hoverfly_GetMiddleware_ReturnsEmptyStringsWhenNeitherIsSet(t *testing.
 func Test_Hoverfly_GetMiddleware_ReturnsBinaryIfJustBinarySet(t *testing.T) {
 	RegisterTestingT(t)
 
-	_, unit := testTools(201, `{'message': 'here'}`)
+	unit := NewHoverflyWithConfiguration(&Configuration{})
 	unit.Cfg.Middleware.SetBinary("python")
 
 	binary, script, remote := unit.GetMiddleware()
@@ -392,7 +493,7 @@ func Test_Hoverfly_GetMiddleware_ReturnsBinaryIfJustBinarySet(t *testing.T) {
 func Test_Hoverfly_GetMiddleware_ReturnsRemotefJustRemoteSet(t *testing.T) {
 	RegisterTestingT(t)
 
-	_, unit := testTools(201, `{'message': 'here'}`)
+	unit := NewHoverflyWithConfiguration(&Configuration{})
 	unit.Cfg.Middleware.Remote = "test.com"
 
 	binary, script, remote := unit.GetMiddleware()
@@ -404,7 +505,7 @@ func Test_Hoverfly_GetMiddleware_ReturnsRemotefJustRemoteSet(t *testing.T) {
 func Test_Hoverfly_SetMiddleware_CanSetBinaryAndScript(t *testing.T) {
 	RegisterTestingT(t)
 
-	_, unit := testTools(201, `{'message': 'here'}`)
+	unit := NewHoverflyWithConfiguration(&Configuration{})
 
 	err := unit.SetMiddleware("python", pythonMiddlewareBasic, "")
 	Expect(err).To(BeNil())
@@ -419,7 +520,7 @@ func Test_Hoverfly_SetMiddleware_CanSetBinaryAndScript(t *testing.T) {
 func Test_Hoverfly_SetMiddleware_CanSetRemote(t *testing.T) {
 	RegisterTestingT(t)
 
-	_, unit := testTools(201, `{'message': 'here'}`)
+	unit := NewHoverflyWithConfiguration(&Configuration{})
 
 	muxRouter := mux.NewRouter()
 	muxRouter.HandleFunc("/process", processHandlerOkay).Methods("POST")
@@ -440,7 +541,7 @@ func Test_Hoverfly_SetMiddleware_CanSetRemote(t *testing.T) {
 func Test_Hoverfly_SetMiddleware_WillErrorIfGivenBadRemote(t *testing.T) {
 	RegisterTestingT(t)
 
-	_, unit := testTools(201, `{'message': 'here'}`)
+	unit := NewHoverflyWithConfiguration(&Configuration{})
 
 	err := unit.SetMiddleware("", "", "[]somemadeupwebsite*&*^&$%^")
 	Expect(err).ToNot(BeNil())
@@ -453,26 +554,10 @@ func Test_Hoverfly_SetMiddleware_WillErrorIfGivenBadRemote(t *testing.T) {
 	Expect(unit.Cfg.Middleware.Remote).To(Equal(""))
 }
 
-func Test_Hoverfly_SetMiddleware_WillErrorIfGivenBadBinaryAndWillNotChangeMiddleware(t *testing.T) {
-	RegisterTestingT(t)
-
-	_, unit := testTools(201, `{'message': 'here'}`)
-	unit.Cfg.Middleware.SetBinary("python")
-	unit.Cfg.Middleware.SetScript("test-script")
-
-	err := unit.SetMiddleware("this-isnt-a-binary", pythonMiddlewareBasic, "")
-	Expect(err).ToNot(BeNil())
-
-	Expect(unit.Cfg.Middleware.Binary).To(Equal("python"))
-
-	script, _ := unit.Cfg.Middleware.GetScript()
-	Expect(script).To(Equal("test-script"))
-}
-
 func Test_Hoverfly_SetMiddleware_WillErrorIfGivenScriptAndNoBinaryAndWillNotChangeMiddleware(t *testing.T) {
 	RegisterTestingT(t)
 
-	_, unit := testTools(201, `{'message': 'here'}`)
+	unit := NewHoverflyWithConfiguration(&Configuration{})
 	unit.Cfg.Middleware.SetBinary("python")
 	unit.Cfg.Middleware.SetScript("test-script")
 
@@ -488,7 +573,7 @@ func Test_Hoverfly_SetMiddleware_WillErrorIfGivenScriptAndNoBinaryAndWillNotChan
 func Test_Hoverfly_SetMiddleware_WillDeleteMiddlewareSettingsIfEmptyBinaryAndScriptAndRemote(t *testing.T) {
 	RegisterTestingT(t)
 
-	_, unit := testTools(201, `{'message': 'here'}`)
+	unit := NewHoverflyWithConfiguration(&Configuration{})
 	unit.Cfg.Middleware.SetBinary("python")
 	unit.Cfg.Middleware.SetScript("test-script")
 
@@ -504,7 +589,7 @@ func Test_Hoverfly_SetMiddleware_WillDeleteMiddlewareSettingsIfEmptyBinaryAndScr
 func Test_Hoverfly_SetMiddleware_WontSetMiddlewareIfCannotRunScript(t *testing.T) {
 	RegisterTestingT(t)
 
-	_, unit := testTools(201, `{'message': 'here'}`)
+	unit := NewHoverflyWithConfiguration(&Configuration{})
 
 	err := unit.SetMiddleware("python", "ewfaet4rafgre", "")
 	Expect(err).ToNot(BeNil())
@@ -518,7 +603,7 @@ func Test_Hoverfly_SetMiddleware_WontSetMiddlewareIfCannotRunScript(t *testing.T
 func Test_Hoverfly_SetMiddleware_WillSetBinaryWithNoScript(t *testing.T) {
 	RegisterTestingT(t)
 
-	_, unit := testTools(201, `{'message': 'here'}`)
+	unit := NewHoverflyWithConfiguration(&Configuration{})
 
 	err := unit.SetMiddleware("cat", "", "")
 	Expect(err).To(BeNil())
@@ -542,11 +627,189 @@ func Test_Hoverfly_GetVersion_GetsVersion(t *testing.T) {
 func Test_Hoverfly_GetUpstreamProxy_GetsUpstreamProxy(t *testing.T) {
 	RegisterTestingT(t)
 
-	unit := Hoverfly{
-		Cfg: &Configuration{
-			UpstreamProxy: "upstream-proxy.org",
-		},
-	}
+	unit := NewHoverflyWithConfiguration(&Configuration{
+		UpstreamProxy: "upstream-proxy.org",
+	})
 
 	Expect(unit.GetUpstreamProxy()).To(Equal("upstream-proxy.org"))
+}
+
+func Test_Hoverfly_IsWebServer_GetsIsWebServer(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := NewHoverflyWithConfiguration(&Configuration{
+		Webserver: true,
+	})
+
+	Expect(unit.IsWebServer()).To(BeTrue())
+}
+
+func Test_Hoverfly_SetMode_CanSetModeToCapture(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := NewHoverflyWithConfiguration(&Configuration{})
+
+	Expect(unit.SetMode("capture")).To(BeNil())
+	Expect(unit.Cfg.Mode).To(Equal("capture"))
+}
+
+func Test_Hoverfly_SetMode_CanSetModeToSimulate(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := NewHoverflyWithConfiguration(&Configuration{})
+
+	Expect(unit.SetMode("simulate")).To(BeNil())
+	Expect(unit.Cfg.Mode).To(Equal("simulate"))
+}
+
+func Test_Hoverfly_SetMode_CanSetModeToModify(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := NewHoverflyWithConfiguration(&Configuration{})
+
+	Expect(unit.SetMode("modify")).To(BeNil())
+	Expect(unit.Cfg.Mode).To(Equal("modify"))
+}
+
+func Test_Hoverfly_SetMode_CanSetModeToSynthesize(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := NewHoverflyWithConfiguration(&Configuration{})
+
+	Expect(unit.SetMode("synthesize")).To(BeNil())
+	Expect(unit.Cfg.Mode).To(Equal("synthesize"))
+}
+
+func Test_Hoverfly_SetMode_CannotSetModeToSomethingInvalid(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := NewHoverflyWithConfiguration(&Configuration{})
+
+	Expect(unit.SetMode("mode")).ToNot(BeNil())
+	Expect(unit.Cfg.Mode).To(Equal(""))
+
+	Expect(unit.SetMode("hoverfly")).ToNot(BeNil())
+	Expect(unit.Cfg.Mode).To(Equal(""))
+}
+
+func Test_Hoverfly_SetMode_SettingModeToCaptureWipesCache(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := NewHoverflyWithConfiguration(&Configuration{})
+
+	unit.CacheMatcher.RequestCache.Set([]byte("test"), []byte("test_bytes"))
+
+	Expect(unit.SetMode("capture")).To(BeNil())
+	Expect(unit.Cfg.Mode).To(Equal("capture"))
+
+	values, _ := unit.CacheMatcher.RequestCache.GetAllValues()
+	Expect(values).To(HaveLen(0))
+}
+
+func Test_Hoverfly_SetModeWithARguments_AsteriskCanOnlyBeValidAsTheOnlyHeader(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := NewHoverflyWithConfiguration(&Configuration{})
+
+	unit.CacheMatcher.RequestCache.Set([]byte("test"), []byte("test_bytes"))
+
+	Expect(unit.SetMode("capture")).To(BeNil())
+	Expect(unit.Cfg.Mode).To(Equal("capture"))
+
+	Expect(unit.SetModeWithArguments(v2.ModeView{
+		Arguments: v2.ModeArgumentsView{
+			Headers: []string{"Content-Type", "*"},
+		},
+	})).ToNot(Succeed())
+
+	Expect(unit.SetModeWithArguments(v2.ModeView{
+		Arguments: v2.ModeArgumentsView{
+			Headers: []string{"*"},
+		},
+	})).ToNot(Succeed())
+
+}
+
+func Test_Hoverfly_AddDiff_AddEntry(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := NewHoverflyWithConfiguration(&Configuration{})
+	Expect(unit.responsesDiff).To(HaveLen(0))
+
+	key := v2.SimpleRequestDefinitionView{
+		Host: "test.com",
+	}
+
+	unit.AddDiff(key, v2.DiffReport{Timestamp: "now", DiffEntries: []v2.DiffReportEntry{v2.DiffReportEntry{}}})
+
+	Expect(unit.responsesDiff).To(HaveLen(1))
+
+	diffReports := unit.responsesDiff[key]
+	Expect(diffReports).To(HaveLen(1))
+	Expect(diffReports[0].Timestamp).To(Equal("now"))
+}
+
+func Test_Hoverfly_AddDiff_AppendsEntry(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := NewHoverflyWithConfiguration(&Configuration{})
+	Expect(unit.responsesDiff).To(HaveLen(0))
+
+	key := v2.SimpleRequestDefinitionView{
+		Host: "test.com",
+	}
+
+	unit.AddDiff(key, v2.DiffReport{Timestamp: "now", DiffEntries: []v2.DiffReportEntry{v2.DiffReportEntry{Actual: "1"}}})
+	unit.AddDiff(key, v2.DiffReport{Timestamp: "now", DiffEntries: []v2.DiffReportEntry{v2.DiffReportEntry{Actual: "2"}}})
+
+	Expect(unit.responsesDiff).To(HaveLen(1))
+
+	diffReports := unit.responsesDiff[key]
+	Expect(diffReports).To(HaveLen(2))
+	Expect(diffReports[0].DiffEntries[0].Actual).To(Equal("1"))
+	Expect(diffReports[1].DiffEntries[0].Actual).To(Equal("2"))
+}
+
+func Test_Hoverfly_AddDiff_AddEntry_DiffrentKey(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := NewHoverflyWithConfiguration(&Configuration{})
+	Expect(unit.responsesDiff).To(HaveLen(0))
+
+	key := v2.SimpleRequestDefinitionView{
+		Host: "test.com",
+	}
+
+	keyTwo := v2.SimpleRequestDefinitionView{
+		Method: "POST",
+		Host:   "test.com",
+	}
+
+	unit.AddDiff(key, v2.DiffReport{Timestamp: "now", DiffEntries: []v2.DiffReportEntry{v2.DiffReportEntry{Actual: "1"}}})
+	unit.AddDiff(keyTwo, v2.DiffReport{Timestamp: "now", DiffEntries: []v2.DiffReportEntry{v2.DiffReportEntry{Actual: "2"}}})
+
+	Expect(unit.responsesDiff).To(HaveLen(2))
+
+	diffReports := unit.responsesDiff[key]
+	Expect(diffReports).To(HaveLen(1))
+	Expect(diffReports[0].DiffEntries[0].Actual).To(Equal("1"))
+
+	diffReports = unit.responsesDiff[keyTwo]
+	Expect(diffReports).To(HaveLen(1))
+	Expect(diffReports[0].DiffEntries[0].Actual).To(Equal("2"))
+}
+
+func Test_Hoverfly_AddDiff_DoesntAddDiffReport_NoEntries(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := NewHoverflyWithConfiguration(&Configuration{})
+	Expect(unit.responsesDiff).To(HaveLen(0))
+
+	key := v2.SimpleRequestDefinitionView{
+		Host: "test.com",
+	}
+
+	unit.AddDiff(key, v2.DiffReport{Timestamp: "now"})
+
+	Expect(unit.responsesDiff).To(HaveLen(0))
 }

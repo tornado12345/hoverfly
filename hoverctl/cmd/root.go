@@ -5,16 +5,17 @@ import (
 	"os"
 
 	log "github.com/Sirupsen/logrus"
-	"github.com/SpectoLabs/hoverfly/hoverctl/wrapper"
+	"github.com/SpectoLabs/hoverfly/hoverctl/configuration"
 	"github.com/spf13/cobra"
 )
 
-var adminPort, proxyPort, host, certificate, key, database, upstreamProxy string
-var disableTls, verbose bool
+var targetNameFlag string
 
-var hoverfly wrapper.Hoverfly
-var hoverflyDirectory wrapper.HoverflyDirectory
-var config *wrapper.Config
+var force, verbose, setDefaultTargetFlag bool
+
+var hoverflyDirectory configuration.HoverflyDirectory
+var config *configuration.Config
+var target *configuration.Target
 
 var version string
 
@@ -31,30 +32,29 @@ func Execute(hoverctlVersion string) {
 		fmt.Println(err)
 		os.Exit(-1)
 	}
+
+	if setDefaultTargetFlag && target != nil {
+		config.DefaultTarget = target.Name
+	}
+	handleIfError(config.WriteToFile(hoverflyDirectory))
 }
 
 func init() {
 	cobra.OnInitialize(initConfig)
 
-	RootCmd.PersistentFlags().StringVar(&adminPort, "admin-port", "",
-		"A port number for the Hoverfly API/GUI. Overrides the default Hoverfly admin port (8888)")
-	RootCmd.PersistentFlags().StringVar(&proxyPort, "proxy-port", "",
-		"A port number for the Hoverfly proxy. Overrides the default Hoverfly proxy port (8500)")
-	RootCmd.PersistentFlags().StringVar(&host, "host", "",
-		"A host on which a Hoverfly instance is running. Overrides the default Hoverfly host (localhost)")
-	RootCmd.PersistentFlags().StringVar(&certificate, "certificate", "",
-		"A path to a certificate file. Overrides the default Hoverfly certificate")
-	RootCmd.PersistentFlags().StringVar(&key, "key", "",
-		"A path to a key file. Overrides the default Hoverfly TLS key")
-	RootCmd.PersistentFlags().BoolVar(&disableTls, "disable-tls", false,
-		"Disables TLS verification")
-	RootCmd.PersistentFlags().StringVar(&database, "database", "",
-		"A database type [memory|boltdb]. Overrides the default Hoverfly database type (memory)")
-	RootCmd.PersistentFlags().StringVar(&upstreamProxy, "upstream-proxy", "",
-		"A host for which Hoverfly will proxy its requests to")
+	RootCmd.PersistentFlags().BoolVar(&force, "force", false,
+		"Bypass any confirmation when using hoverctl")
+	RootCmd.Flag("force").Shorthand = "f"
+
+	RootCmd.PersistentFlags().StringVar(&targetNameFlag, "target", "",
+		"A name for an instance of Hoverfly you are trying to communicate with. Overrides the default target (default)")
+	RootCmd.PersistentFlags().BoolVar(&setDefaultTargetFlag, "set-default", false,
+		"Sets the current target as the default target for hoverctl")
 
 	RootCmd.PersistentFlags().BoolVar(&verbose, "verbose", false, "Verbose logging from hoverctl")
+
 	RootCmd.Flag("verbose").Shorthand = "v"
+	RootCmd.Flag("target").Shorthand = "t"
 }
 
 func initConfig() {
@@ -64,30 +64,27 @@ func initConfig() {
 		log.SetLevel(log.DebugLevel)
 	}
 
-	wrapper.SetConfigurationDefaults()
-	wrapper.SetConfigurationPaths()
+	configuration.SetConfigurationDefaults()
+	configuration.SetConfigurationPaths()
 
-	config = wrapper.GetConfig()
-	config = config.SetHost(host)
-	config = config.SetAdminPort(adminPort)
-	config = config.SetProxyPort(proxyPort)
-	config = config.SetUsername("")
-	config = config.SetPassword("")
-	config = config.SetCertificate(certificate)
-	config = config.SetKey(key)
-	config = config.DisableTls(disableTls)
-	config = config.SetDbType(database)
-	config = config.SetUpstreamProxy(upstreamProxy)
+	config = configuration.GetConfig()
+
+	if config.GetTarget(config.DefaultTarget) == nil {
+		fmt.Printf("Default target `%v` not found, changing default target to `local`", config.DefaultTarget)
+		config.DefaultTarget = "local"
+
+	}
+
+	target = config.GetTarget(targetNameFlag)
+	if targetNameFlag == "" && target == nil {
+		target = configuration.NewDefaultTarget()
+	}
+
+	if verbose && target != nil {
+		fmt.Println("Current target: " + target.Name + "\n")
+	}
 
 	var err error
-	hoverflyDirectory, err = wrapper.NewHoverflyDirectory(*config)
+	hoverflyDirectory, err = configuration.NewHoverflyDirectory(*config)
 	handleIfError(err)
-
-	hoverfly = wrapper.NewHoverfly(*config)
-}
-
-func handleIfError(err error) {
-	if err != nil {
-		log.Fatal(err.Error())
-	}
 }

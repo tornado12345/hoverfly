@@ -6,7 +6,6 @@ type RequestResponsePair interface {
 }
 
 type Request interface {
-	GetRequestType() *string
 	GetPath() *string
 	GetMethod() *string
 	GetDestination() *string
@@ -20,5 +19,8 @@ type Response interface {
 	GetStatus() int
 	GetBody() string
 	GetEncodedBody() bool
+	GetTemplated() bool
 	GetHeaders() map[string][]string
+	GetTransitionsState() map[string]string
+	GetRemovesState() []string
 }

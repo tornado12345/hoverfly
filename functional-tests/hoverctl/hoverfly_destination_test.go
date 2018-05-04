@@ -1,4 +1,4 @@
-package hoverctl_end_to_end
+package hoverctl_suite
 
 import (
 	"github.com/SpectoLabs/hoverfly/functional-tests"
@@ -18,7 +18,7 @@ var _ = Describe("When I use hoverctl", func() {
 			hoverfly = functional_tests.NewHoverfly()
 			hoverfly.Start()
 
-			WriteConfiguration("localhost", hoverfly.GetAdminPort(), hoverfly.GetProxyPort())
+			functional_tests.Run(hoverctlBinary, "targets", "update", "local", "--admin-port", hoverfly.GetAdminPort())
 		})
 
 		AfterEach(func() {
@@ -75,6 +75,15 @@ var _ = Describe("When I use hoverctl", func() {
 				Expect(output).To(ContainSubstring("The regex provided does not match the dry-run URL"))
 			})
 
+		})
+	})
+
+	Context("with a target that doesn't exist", func() {
+		It("should error", func() {
+			output := functional_tests.Run(hoverctlBinary, "destination", "--target", "test-target")
+
+			Expect(output).To(ContainSubstring("test-target is not a target"))
+			Expect(output).To(ContainSubstring("Run `hoverctl targets create test-target`"))
 		})
 	})
 })

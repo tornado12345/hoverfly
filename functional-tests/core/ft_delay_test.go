@@ -1,13 +1,13 @@
 package hoverfly_test
 
 import (
-	"bytes"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"time"
 
+	"github.com/SpectoLabs/hoverfly/functional-tests"
 	"github.com/dghubble/sling"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -15,13 +15,25 @@ import (
 
 var _ = Describe("Running Hoverfly with delays", func() {
 
+	var (
+		hoverfly *functional_tests.Hoverfly
+	)
+
+	BeforeEach(func() {
+		hoverfly = functional_tests.NewHoverfly()
+	})
+
+	AfterEach(func() {
+		hoverfly.Stop()
+	})
+
 	Context("When running in capture mode", func() {
 
 		var fakeServer *httptest.Server
 		var fakeServerUrl *url.URL
 
 		BeforeEach(func() {
-			hoverflyCmd = startHoverfly(adminPort, proxyPort)
+			hoverfly.Start()
 
 			fakeServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "text/plain")
@@ -30,17 +42,16 @@ var _ = Describe("Running Hoverfly with delays", func() {
 			}))
 
 			fakeServerUrl, _ = url.Parse(fakeServer.URL)
-			SetHoverflyMode("capture")
+			hoverfly.SetMode("capture")
 		})
 
 		AfterEach(func() {
-			stopHoverfly()
 			fakeServer.Close()
 		})
 
 		It("Should NOT delay the response", func() {
 			start := time.Now()
-			resp := CallFakeServerThroughProxy(fakeServer)
+			resp := hoverfly.Proxy(sling.New().Get(fakeServer.URL))
 			end := time.Now()
 			reqDuration := end.Sub(start)
 			Expect(resp.StatusCode).To(Equal(200))
@@ -52,45 +63,35 @@ var _ = Describe("Running Hoverfly with delays", func() {
 
 	Context("When running in simulate mode", func() {
 
-		var (
-			jsonRequestResponsePair *bytes.Buffer
-		)
-
 		BeforeEach(func() {
-			jsonRequestResponsePair = bytes.NewBufferString(`{"data":[{"request": {"path": "/path1", "method": "GET", "destination": "www.virtual.com", "scheme": "http", "query": "", "body": "", "headers": {"Header": ["value1"]}}, "response": {"status": 201, "encodedBody": false, "body": "body1", "headers": {"Header": ["value1"]}}}, {"request": {"path": "/path2", "method": "GET", "destination": "www.virtual.com", "scheme": "http", "query": "", "body": "", "headers": {"Header": ["value2"]}}, "response": {"status": 202, "body": "body2", "headers": {"Header": ["value2"]}}}]}`)
-			hoverflyCmd = startHoverfly(adminPort, proxyPort)
-			SetHoverflyResponseDelays("testdata/delays.json")
-			SetHoverflyMode("simulate")
-			ImportHoverflyRecords(jsonRequestResponsePair)
+			hoverfly.Start()
+			hoverfly.ImportSimulation(functional_tests.JsonPayloadWithDelays)
+			hoverfly.SetMode("simulate")
 		})
 
 		It("should delay returning the cached response", func() {
 			start := time.Now()
-			resp := DoRequestThroughProxy(sling.New().Get("http://www.virtual.com/path2"))
+			resp := hoverfly.Proxy(sling.New().Get("http://test-server.com/path1"))
 			end := time.Now()
 			reqDuration := end.Sub(start)
 			body, err := ioutil.ReadAll(resp.Body)
 			Expect(err).To(BeNil())
-			Expect(string(body)).To(Equal("body2"))
+			Expect(string(body)).To(Equal("exact match"))
 			Expect(reqDuration > (100 * time.Millisecond)).To(BeTrue())
-		})
-
-		AfterEach(func() {
-			stopHoverfly()
 		})
 	})
 
 	Context("When running in synthesise mode (with middleware)", func() {
 
 		BeforeEach(func() {
-			hoverflyCmd = startHoverflyWithMiddleware(adminPort, proxyPort, "python testdata/middleware.py")
-			SetHoverflyResponseDelays("testdata/delays.json")
-			SetHoverflyMode("synthesize")
+			hoverfly.Start("-middleware", "python testdata/middleware.py")
+			hoverfly.ImportSimulation(functional_tests.JsonPayloadWithDelays)
+			hoverfly.SetMode("synthesize")
 		})
 
 		It("should delay returning the response", func() {
 			start := time.Now()
-			resp := DoRequestThroughProxy(sling.New().Get("http://www.virtual.com/path2"))
+			resp := hoverfly.Proxy(sling.New().Get("http://test-server.com/path2"))
 			end := time.Now()
 			reqDuration := end.Sub(start)
 			body, err := ioutil.ReadAll(resp.Body)
@@ -99,24 +100,19 @@ var _ = Describe("Running Hoverfly with delays", func() {
 			Expect(reqDuration > (100 * time.Millisecond)).To(BeTrue())
 
 		})
-
-		AfterEach(func() {
-			stopHoverfly()
-		})
-
 	})
 
 	Context("When running in modify mode", func() {
 
 		BeforeEach(func() {
-			hoverflyCmd = startHoverflyWithMiddleware(adminPort, proxyPort, "python testdata/middleware.py")
-			SetHoverflyResponseDelays("testdata/delays.json")
-			SetHoverflyMode("modify")
+			hoverfly.Start("-middleware", "python testdata/middleware.py")
+			hoverfly.ImportSimulation(functional_tests.JsonPayloadWithDelays)
+			hoverfly.SetMode("modify")
 		})
 
 		It("should delay returning the response", func() {
 			start := time.Now()
-			resp := DoRequestThroughProxy(sling.New().Get("http://www.virtual.com/path2"))
+			resp := hoverfly.Proxy(sling.New().Get("http://localhost:" + hoverfly.GetAdminPort()))
 			end := time.Now()
 			reqDuration := end.Sub(start)
 			body, err := ioutil.ReadAll(resp.Body)
@@ -124,10 +120,5 @@ var _ = Describe("Running Hoverfly with delays", func() {
 			Expect(string(body)).To(Equal("CHANGED_RESPONSE_BODY"))
 			Expect(reqDuration > (100 * time.Millisecond)).To(BeTrue())
 		})
-
-		AfterEach(func() {
-			stopHoverfly()
-		})
-
 	})
 })

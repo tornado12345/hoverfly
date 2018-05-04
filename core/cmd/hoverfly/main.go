@@ -29,12 +29,15 @@ import (
 	"time"
 
 	log "github.com/Sirupsen/logrus"
+	"github.com/SpectoLabs/goproxy"
 	hv "github.com/SpectoLabs/hoverfly/core"
 	"github.com/SpectoLabs/hoverfly/core/authentication/backends"
 	"github.com/SpectoLabs/hoverfly/core/cache"
 	hvc "github.com/SpectoLabs/hoverfly/core/certs"
+	"github.com/SpectoLabs/hoverfly/core/handlers"
+	"github.com/SpectoLabs/hoverfly/core/matching"
+	mw "github.com/SpectoLabs/hoverfly/core/middleware"
 	"github.com/SpectoLabs/hoverfly/core/modes"
-	"github.com/elazarl/goproxy"
 )
 
 type arrayFlags []string
@@ -55,112 +58,138 @@ const boltBackend = "boltdb"
 const inmemoryBackend = "memory"
 
 var (
-	hoverflyVersion string
+	version      = flag.Bool("version", false, "Get the version of hoverfly")
+	verbose      = flag.Bool("v", false, "Should every proxy request be logged to stdout")
+	capture      = flag.Bool("capture", false, "Start Hoverfly in capture mode - transparently intercepts and saves requests/response")
+	synthesize   = flag.Bool("synthesize", false, "Start Hoverfly in synthesize mode (middleware is required)")
+	modify       = flag.Bool("modify", false, "Start Hoverfly in modify mode - applies middleware (required) to both outgoing and incoming HTTP traffic")
+	spy          = flag.Bool("spy", false, "Start Hoverfly in spy mode, similar to simulate but calls real server when cache miss")
+	diff         = flag.Bool("diff", false, "Start Hoverfly in diff mode - calls real server and compares the actual response with the expected simulation config if present")
+	middleware   = flag.String("middleware", "", "Should proxy use middleware")
+	proxyPort    = flag.String("pp", "", "Proxy port - run proxy on another port (i.e. '-pp 9999' to run proxy on port 9999)")
+	adminPort    = flag.String("ap", "", "Admin port - run admin interface on another port (i.e. '-ap 1234' to run admin UI on port 1234)")
+	listenOnHost = flag.String("listen-on-host", "", "Specify which network interface to bind to, eg. 0.0.0.0 will bind to all interfaces. By default hoverfly will only bind ports to loopback interface")
+	metrics      = flag.Bool("metrics", false, "Supply -metrics flag to enable metrics logging to stdout")
+	dev          = flag.Bool("dev", false, "Enable CORS headers to allow frontend development")
+	destination  = flag.String("destination", ".", "Destination URI to catch")
+	webserver    = flag.Bool("webserver", false, "Start Hoverfly in webserver mode (simulate mode)")
 
-	version     = flag.Bool("version", false, "get the version of hoverfly")
-	verbose     = flag.Bool("v", false, "should every proxy request be logged to stdout")
-	capture     = flag.Bool("capture", false, "start Hoverfly in capture mode - transparently intercepts and saves requests/response")
-	synthesize  = flag.Bool("synthesize", false, "start Hoverfly in synthesize mode (middleware is required)")
-	modify      = flag.Bool("modify", false, "start Hoverfly in modify mode - applies middleware (required) to both outgoing and incomming HTTP traffic")
-	middleware  = flag.String("middleware", "", "should proxy use middleware")
-	proxyPort   = flag.String("pp", "", "proxy port - run proxy on another port (i.e. '-pp 9999' to run proxy on port 9999)")
-	adminPort   = flag.String("ap", "", "admin port - run admin interface on another port (i.e. '-ap 1234' to run admin UI on port 1234)")
-	metrics     = flag.Bool("metrics", false, "supply -metrics flag to enable metrics logging to stdout")
-	dev         = flag.Bool("dev", false, "supply -dev flag to serve directly from ./static/dist instead from statik binary")
-	destination = flag.String("destination", ".", "destination URI to catch")
-	webserver   = flag.Bool("webserver", false, "start Hoverfly in webserver mode (simulate mode)")
+	addNew          = flag.Bool("add", false, "Add new user '-add -username hfadmin -password hfpass'")
+	addUser         = flag.String("username", "", "Username for new user")
+	addPassword     = flag.String("password", "", "Password for new user")
+	addPasswordHash = flag.String("password-hash", "", "Password hash for new user instead of password")
+	isAdmin         = flag.Bool("admin", true, "Supply '-admin false' to make this non admin user (defaults to 'true') ")
+	authEnabled     = flag.Bool("auth", false, "Enable authentication, currently it is disabled by default")
 
-	addNew      = flag.Bool("add", false, "add new user '-add -username hfadmin -password hfpass'")
-	addUser     = flag.String("username", "", "username for new user")
-	addPassword = flag.String("password", "", "password for new user")
-	isAdmin     = flag.Bool("admin", true, "supply '-admin false' to make this non admin user (defaults to 'true') ")
-	authEnabled = flag.Bool("auth", false, "enable authentication, currently it is disabled by default")
+	proxyAuthorizationHeader = flag.String("proxy-auth", "proxy-auth", "Switch the Proxy-Authorization header from proxy-auth `Proxy-Authorization` to header-auth `X-HOVERFLY-AUTHORIZATION`. Switching to header-auth will auto enable -https-only")
 
-	generateCA = flag.Bool("generate-ca-cert", false, "generate CA certificate and private key for MITM")
-	certName   = flag.String("cert-name", "hoverfly.proxy", "cert name")
-	certOrg    = flag.String("cert-org", "Hoverfly Authority", "organisation name for new cert")
+	generateCA = flag.Bool("generate-ca-cert", false, "Generate CA certificate and private key for MITM")
+	certName   = flag.String("cert-name", "hoverfly.proxy", "Cert name")
+	certOrg    = flag.String("cert-org", "Hoverfly Authority", "Organisation name for new cert")
 	cert       = flag.String("cert", "", "CA certificate used to sign MITM certificates")
-	key        = flag.String("key", "", "private key of the CA used to sign MITM certificates")
+	key        = flag.String("key", "", "Private key of the CA used to sign MITM certificates")
 
-	tlsVerification = flag.Bool("tls-verification", true, "turn on/off tls verification for outgoing requests (will not try to verify certificates) - defaults to true")
+	tlsVerification    = flag.Bool("tls-verification", true, "Turn on/off tls verification for outgoing requests (will not try to verify certificates) - defaults to true")
+	plainHttpTunneling = flag.Bool("plain-http-tunneling", false, "Use plain http tunneling to host with non-443 port - defaults to false")
 
-	upstreamProxy = flag.String("upstream-proxy", "", "specify an upstream proxy for hoverfly to route traffic through")
+	upstreamProxy = flag.String("upstream-proxy", "", "Specify an upstream proxy for hoverfly to route traffic through")
+	httpsOnly     = flag.Bool("https-only", false, "Allow only secure secure requests to be proxied by hoverfly")
 
-	databasePath = flag.String("db-path", "", "database location - supply it to provide specific database location (will be created there if it doesn't exist)")
-	database     = flag.String("db", inmemoryBackend, "Persistance storage to use - 'boltdb' or 'memory' which will not write anything to disk")
+	databasePath = flag.String("db-path", "", "Database location - supply it to provide specific database location (will be created there if it doesn't exist)")
+	database     = flag.String("db", inmemoryBackend, "Storage to use - 'boltdb' or 'memory' which will not write anything to disk")
+	disableCache = flag.Bool("disable-cache", false, "Disable the cache that sits in front of matching")
+
+	logsFormat = flag.String("logs", "plaintext", "Specify format for logs, options are \"plaintext\" and \"json\" (default \"plaintext\")")
+	logsSize   = flag.Int("logs-size", 1000, "Set the amount of logs to be stored in memory (default \"1000\")")
+
+	journalSize = flag.Int("journal-size", 1000, "Set the size of request/response journal (default \"1000\")")
 )
 
 var CA_CERT = []byte(`-----BEGIN CERTIFICATE-----
-MIIDkDCCAnigAwIBAgIVAPVhYkM0BEM/yrYlqXluHt7cc6l1MA0GCSqGSIb3DQEB
+MIIDbTCCAlWgAwIBAgIVAPAvY6MQi4KmJYmPDmnE29y6njABMA0GCSqGSIb3DQEB
 CwUAMDYxGzAZBgNVBAoTEkhvdmVyZmx5IEF1dGhvcml0eTEXMBUGA1UEAxMOaG92
-ZXJmbHkucHJveHkwHhcNMTUwMzI1MTM1NjA4WhcNMTcwMzI0MTM1NjA4WjA2MRsw
+ZXJmbHkucHJveHkwHhcNMTIwMzI1MTM0NjI3WhcNMjIwMzIzMTM0NjI3WjA2MRsw
 GQYDVQQKExJIb3ZlcmZseSBBdXRob3JpdHkxFzAVBgNVBAMTDmhvdmVyZmx5LnBy
-b3h5MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyVHPS3AoW7GSExp4
-F4b6rofOpCFCk9oyALOqifcLgMqfa+xjzHa9HH7yraT5EPKieTBm+XrJUnWUih+g
-klKKvQYUWSx+W/+5LvFI/ZeOzBnBx9ZRlZNGSu613G430GZp3ydbY18wyhDlH3Xc
-EmhDEHxBX+OmSj1cLMPFqYhbsA5I79evpSafHQ6vIUcy8tZqIj7vGgpssULLq3K9
-Fnbexf8AFkaaRwx/iz3XBXfubrAzjYhr+B57/davpJGu3qkiRBhgWkMO0OHJmFIt
-iIuE8Mg6yEyYd1gJdS0zQFa7FRBOAtJbiEnZfR/MFS3DdptIgyOH9f3iFn/Ad9Lv
-JzWg3wIDAQABo4GUMIGRMA4GA1UdDwEB/wQEAwICpDATBgNVHSUEDDAKBggrBgEF
-BQcDATAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBRMLsxq3r2ownouli5b4BAD
-vjFC9DAfBgNVHSMEGDAWgBRMLsxq3r2ownouli5b4BADvjFC9DAZBgNVHREEEjAQ
-gg5ob3ZlcmZseS5wcm94eTANBgkqhkiG9w0BAQsFAAOCAQEAYPu97vNZekWN80yA
-zxTrakcp0ymcPraZT9mv2+tpicZ9rEa5QVIA4npACFaYmynhO/lyYgHjmBOpy+tX
-KhhO7R6tYJaodVY55/B6/yj/bnAUa67kdMjtcb/lZCZX+cSBaUyuQ3xMHq1JF4sk
-q09xF61TphpHdjTApQsjocJpNCxw2Ou3ctCUnSsuq6oC597CsnzKZTFJsqs4LO03
-lZ7F4bw8LyZl52zzwVwbKnNszAq6ClUyfjVonO85DpBQhq+gFWlSVz4CCC62mig9
-nnOsZC8mHNQrE0gHgTmKQlNwUQE7c+cUpfa9sjdlCG6eDkF4OaLPrG975WFuVXTM
-V6/wDA==
+b3h5MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsw2DShgDHkAugLb2
+efVq5XYPIiiJa1Dj+DPxQEuQDtQYAJPgGm7aCm7YLke0Gm6p2ZJBtLmEEwhwRw50
+f6oeWdd21G2RvnzWLOM8QLehUDtQUxO1pMO4prrP3WmTm/UQr0n50BCC/W/omJIZ
+tdmTN5Z1kHaiYcLeOiHVzzAoVlj45vBS2Tm7guAxWMNAnvzGAif0F0LsTCLIzQBg
+eZ6CQeOe0neS1pCGr4NrxuX6pDu/T/YnS+x6P+g0jUOnlwtQsGPjh1Vw0hhZJe6Z
+/YdnZrIufRaAEufbq8dk/ELZVT4Mi6Gp5uy0gycnWhf1mPhsKpbEOhv1r8tEYQrn
+5u4cHwIDAQABo3IwcDAOBgNVHQ8BAf8EBAMCAqQwEwYDVR0lBAwwCgYIKwYBBQUH
+AwEwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUxTebj9Kv16fuWngIO4zfjddv
+7fUwGQYDVR0RBBIwEIIOaG92ZXJmbHkucHJveHkwDQYJKoZIhvcNAQELBQADggEB
+AKOlihA/DIAc7soiPb8s5eLvY/YTqASgzy3S1oaqEsEFAnNPOu53ePNid6bmKDvD
+hc0E+sphPpcuWyzoSp4Nz5TFl7LTtIzU49mR+/Gn3tDucGLutS0PbdFen7swKTMO
+/HwXy+Bm2a9g4ewgJbfIf4MhgrdX6M4gJqMVL7q/NKeppHlQ4pBYFc+HjrF4V98V
+x/mHLc65qOh7iKPBVY7lSYipnMxRu5N7Q88eaqfaVh44xsIYO83N9Pn1uE9GOUu7
+Eb2Tc6UidvXZMWAfkkrGVyrJGWE4wTAIT/Dz1AKDPuTp16SyljaOZ2YahmFXMp3C
+Fj+GKkpM2WS40fUI9z40WGI=
 -----END CERTIFICATE-----`)
 
 var CA_KEY = []byte(`-----BEGIN RSA PRIVATE KEY-----
-MIIEpAIBAAKCAQEAyVHPS3AoW7GSExp4F4b6rofOpCFCk9oyALOqifcLgMqfa+xj
-zHa9HH7yraT5EPKieTBm+XrJUnWUih+gklKKvQYUWSx+W/+5LvFI/ZeOzBnBx9ZR
-lZNGSu613G430GZp3ydbY18wyhDlH3XcEmhDEHxBX+OmSj1cLMPFqYhbsA5I79ev
-pSafHQ6vIUcy8tZqIj7vGgpssULLq3K9Fnbexf8AFkaaRwx/iz3XBXfubrAzjYhr
-+B57/davpJGu3qkiRBhgWkMO0OHJmFItiIuE8Mg6yEyYd1gJdS0zQFa7FRBOAtJb
-iEnZfR/MFS3DdptIgyOH9f3iFn/Ad9LvJzWg3wIDAQABAoIBAASQlFCzlFav6g4A
-1aRC7UAz2B2km2va0LNvX3iNX3dmIMNDsueZ8aPJxRrm2LbnqYNx84PIovP5soqH
-OQ7YTEkI8EEtXxga7koAMpV9cEF0fA5Z77OiiT99tiXvYdiZ2eCzdcEFEYgjZe6W
-r4zDTHH9P0Y7VTPtvD9PmRXE/784KWLfREf6pwuICtBf2cLXPrq7mIZaV5Tf2od1
-k6PHEDSaVZ5rLWgUGzmPyFiyC7phcFpck8JEGM4mp5YEdVwL3j/F8n8pcgDYQd1R
-jf2CKtzeGNeQ3mTca8cAlqHmmbB6fUXz6SGK91x1O60tXWMJHv2A6n6wK6k/oOFn
-q54ZzOECgYEA8R+JfS1/0lAlxJR8nl/kE0YNmuTpc5ZmHI0jm1Tfz3WipWSWCktI
-BzgpygcHdjk9YzGO7d5lO5XqBccP9ntI9+6/ULwpTgusYR+O+OEHuDo50DZACgUP
-wqOnsfx37cXd9z6Dp6+xR9c82pqcxEIjBRgZ7gdRRPRndR1lmXTn7JkCgYEA1b2W
-WpCkjmfFBgrIJSpf+t6MavTksDILTQpOmRTZj4svhlJ0/EzSBwZqNDCtCYj5D8pq
-I67wMeRmVa3zh2AQLdc1hqP3yVWHohWh50rN0FMpKztFwizjNrlXDcHDTwS+RMYr
-t2K+UEhpS1XdY76L5fAMs9d5j3OH5/HvDbmjrDcCgYEAiR+cOtnjNSFrOQ4QiKiT
-tfpCxnGj6Z4AWABT3YQ4+2w0oMZBJX2GasSfz0qMDcmjhYOres7c1zP8MGjyRQP7
-jTPzDODUxJOS5nDiB9tBXp2OP0B6zrfuLIyRU4D2WvwJrQ+aI4Sg1vAqpU8EFABg
-lgcMx/bVWtd69nlPTCPVuRECgYADFdN/xyq464KKjclJ0AzGoEPCn3pVmMNU/1sX
-Fpf1XHr5I2OQ6ML3Wv5ZdoJo6tM9iRxzG2lYLwXTIsmrIJXbM4oQQXmoLFXi3xER
-N6E06p5jg12EagV1msNI7Y0WLOlaMMocwY4htonejoS9ldiLHyXvyqJ0kaRaksFy
-n0VfjQKBgQDe8rz2fM4F4ZeaCi75LCik8XCpA//8DquYrtwz+ojM9fK7Z28N8Vir
-G/COvEx6J0CycRYFzUUxNWOpFIONCgLQkNEaGppBPkZ/aLqZzeOsakv9dGxVsm2W
-gYLP4o2Hv9odPkRDyOasEJ5wIjnk8Aj2fmD34TAVKiSFkwguW9QbHg==
------END RSA PRIVATE KEY-----
-`)
+MIIEpAIBAAKCAQEAsw2DShgDHkAugLb2efVq5XYPIiiJa1Dj+DPxQEuQDtQYAJPg
+Gm7aCm7YLke0Gm6p2ZJBtLmEEwhwRw50f6oeWdd21G2RvnzWLOM8QLehUDtQUxO1
+pMO4prrP3WmTm/UQr0n50BCC/W/omJIZtdmTN5Z1kHaiYcLeOiHVzzAoVlj45vBS
+2Tm7guAxWMNAnvzGAif0F0LsTCLIzQBgeZ6CQeOe0neS1pCGr4NrxuX6pDu/T/Yn
+S+x6P+g0jUOnlwtQsGPjh1Vw0hhZJe6Z/YdnZrIufRaAEufbq8dk/ELZVT4Mi6Gp
+5uy0gycnWhf1mPhsKpbEOhv1r8tEYQrn5u4cHwIDAQABAoIBAQCmeAK/aXHEt0FE
+9FZV70FSUyAgzvVsbAl3YruC3n3x+2jRaKqriLJ5jrK43HtrM8YAfYVPREex9l+F
+AMB5TS3os3VMbQ5avu/VTfNf7BozYOH+S03PART1FqxZm2XcUs0PW8TBmAhhHqFu
+8C6tLrs7rExjYpj4MVexTnHdrlViaMiMISXAEgiX5xJ8MNRgfWIhNYUssqXfOM95
+wLF6Gq95Ma+4LSl/lXrg2Z28PbCWJLF4GzX4pX2EikGuSe9sf+Wq8NAY3XDwo9fT
+I46WE13bZGQ/7ggkSrs3r0qrNtp+pO5XfFwV/UivQ7qaxHXKdeoWkFoTjxyblEa0
+zzrpb5+xAoGBAOiwF42SxIeRCC65dNrHkGaYQlK/z11ly7ZKR9GRNr6+oAiq/Lqz
+11NGQnZ00d2k7W3tk4oIrkT+bLO45LgxBCeMp97PLokY310c0y0Xjs0BL1RHczu6
+8zuhGie/cda/5DH3vkQ6IlBXrh4gSpts865GbyXgLkrjsmgjbRDCdzE3AoGBAMT9
+zfxlzCqa53LzqGyzf16CAr6t+Ry85NgKYbEZq87w9rzc68btbpoKBneUWuNIR7gR
+tbksdNsc8F/s8D+ftWqHHkhHyALxzPEQy1I8wLPpwGFZPFSfeCmq6iJGSvNgTSgy
+uv5PEAPpaDbBTKZ848U++eZOXGaIcx18KgcncgBZAoGBAJutjOSMaG6nCwlvzQ2+
+7Q6nGeCRMiSzwZqBkhFVDYKKuTlzZMlpH0w4uqjUOcEH4k5k4Aw/CJFig8muj1/o
+c3YedgXtKZ5SBMcgTO1jUIg6HbdOYnt49dlUTNKBFKHwGrWPoj21g1Wrg/Pl+OSJ
+/XMA7sYxeedi9e8UnJjU8rf7AoGAPNTbnUuaRrXbL0ZLBnZPqNGhI1z6BoPWb1iV
+Xmk9AwSqTRwzuxRrCSp7YMXxYypY62Ccq3gtBdTj7dtvPVaGYUUkdtGj1DTzQqYb
+A2Q7ZdOTUvyJguBT7RoYf0kRsCJW8UjpMcscePjE89OxZeA/PhP6e8JLCmaslbhY
+CimGLNECgYAGSyGzGL5eccyayX5e0uGCxRMqjYym8diaCftp+qKXUZw2z7IL8Tu6
+AGCtSd0PcMk6IUmaG5mGWHJRb2mvi92Rhx1JUFfdc07FbHnNQBZfCj/SP26XROqp
+nIoRtbUjdBkzPrwfSh22POoCdDUKlRUcwR0Wq7lrpQchSU1Xtz6Jkw==
+-----END RSA PRIVATE KEY-----`)
 
 func init() {
 	// overriding default goproxy certificate
 	tlsc, err := tls.X509KeyPair(CA_CERT, CA_KEY)
 	if err != nil {
-		log.Fatalf("Failed to load certifiate and key pair, got error: %s", err.Error())
+		log.WithFields(log.Fields{
+			"error": err.Error(),
+		}).Fatal("Failed to load certifiate and key pair")
 	}
 	goproxy.GoproxyCa = tlsc
 }
 
 func main() {
-	log.SetFormatter(&log.JSONFormatter{})
-	flag.Var(&importFlags, "import", "import from file or from URL (i.e. '-import my_service.json' or '-import http://mypage.com/service_x.json'")
-	flag.Var(&destinationFlags, "dest", "specify which hosts to process (i.e. '-dest fooservice.org -dest barservice.org -dest catservice.org') - other hosts will be ignored will passthrough'")
+	hoverfly := hv.NewHoverfly()
+
+	// log.SetFormatter(&log.JSONFormatter{})
+	flag.Var(&importFlags, "import", "Import from file or from URL (i.e. '-import my_service.json' or '-import http://mypage.com/service_x.json'")
+	flag.Var(&destinationFlags, "dest", "Specify which hosts to process (i.e. '-dest fooservice.org -dest barservice.org -dest catservice.org') - other hosts will be ignored will passthrough'")
 	flag.Parse()
+	if *logsFormat == "json" {
+		log.SetFormatter(&log.JSONFormatter{})
+	} else {
+		log.SetFormatter(&log.TextFormatter{
+			ForceColors:      true,
+			DisableTimestamp: false,
+			FullTimestamp:    true,
+		})
+	}
 
 	if *version {
-		fmt.Println(hoverflyVersion)
+		fmt.Println(hv.NewHoverfly().GetVersion())
 		os.Exit(0)
 	}
+
+	hoverfly.StoreLogsHook.LogsLimit = *logsSize
+	hoverfly.Journal.EntryLimit = *journalSize
 
 	// getting settings
 	cfg := hv.InitSettings()
@@ -168,56 +197,77 @@ func main() {
 	if *verbose {
 		// Only log the warning severity or above.
 		log.SetLevel(log.DebugLevel)
+		log.Info("Log level set to verbose")
 	}
 	cfg.Verbose = *verbose
 
 	if *dev {
-		// making text pretty
-		log.SetFormatter(&log.TextFormatter{})
+		handlers.EnableCors = true
 	}
 
 	if *generateCA {
-		tlsc, err := hvc.GenerateAndSave(*certName, *certOrg, 365*24*time.Hour)
+		tlsc, err := hvc.GenerateAndSave(*certName, *certOrg, 5*365*24*time.Hour)
 		if err != nil {
 			log.WithFields(log.Fields{
 				"error": err.Error(),
-			}).Fatal("failed to generate certificate.")
+			}).Fatal("Failed to generate certificate")
 		}
 		goproxy.GoproxyCa = *tlsc
 
 	} else if *cert != "" && *key != "" {
 		tlsc, err := tls.LoadX509KeyPair(*cert, *key)
 		if err != nil {
-			log.Fatalf("Failed to load certifiate and key pair, got error: %s", err.Error())
+			log.WithFields(log.Fields{
+				"error": err.Error(),
+			}).Fatal("Failed to load certifiate and key pair")
 		}
+
+		goproxy.GoproxyCa = tlsc
 
 		log.WithFields(log.Fields{
 			"certificate": *cert,
 			"key":         *key,
 		}).Info("Default keys have been overwritten")
-
-		goproxy.GoproxyCa = tlsc
-
 	}
 
 	// overriding environment variables (proxy and admin ports)
 	if *proxyPort != "" {
 		cfg.ProxyPort = *proxyPort
+
+		log.WithFields(log.Fields{
+			"port": *proxyPort,
+		}).Info("Default proxy port has been overwritten")
 	}
 	if *adminPort != "" {
 		cfg.AdminPort = *adminPort
+
+		log.WithFields(log.Fields{
+			"port": *adminPort,
+		}).Info("Default admin port has been overwritten")
+	}
+
+	if *listenOnHost != "" {
+		cfg.ListenOnHost = *listenOnHost
+
+		log.WithFields(log.Fields{
+			"host": *listenOnHost,
+		}).Info("Listen on specific interface")
 	}
 
 	// overriding environment variable (external proxy)
 	if *upstreamProxy != "" {
 		cfg.SetUpstreamProxy(*upstreamProxy)
+
+		log.WithFields(log.Fields{
+			"url": *upstreamProxy,
+		}).Info("Upstream proxy has been set")
 	}
 
-	// development settings
-	cfg.Development = *dev
+	cfg.HttpsOnly = *httpsOnly
+	cfg.PlainHttpTunneling = *plainHttpTunneling
 
 	// overriding default middleware setting
-	newMiddleware, err := hv.ConvertToNewMiddleware(*middleware)
+	newMiddleware, err := mw.ConvertToNewMiddleware(*middleware)
 	if err != nil {
 		log.Error(err.Error())
 	}
@@ -236,7 +286,8 @@ func main() {
 	// disabling tls verification if flag or env variable is set to 'false' (defaults to true)
 	if !cfg.TLSVerification || !*tlsVerification {
 		cfg.TLSVerification = false
-		log.Info("tls certificate verification is now turned off!")
+
+		log.Info("TLS certificate verification has been disabled")
 	}
 
 	if len(destinationFlags) > 0 {
@@ -248,7 +299,6 @@ func main() {
 	}
 
 	var requestCache cache.Cache
-	var metadataCache cache.Cache
 	var tokenCache cache.Cache
 	var userCache cache.Cache
 
@@ -257,44 +307,67 @@ func main() {
 	}
 
 	if *database == boltBackend {
-		log.Info("Creating bolt db backend...")
 		db := cache.GetDB(cfg.DatabasePath)
 		defer db.Close()
 		requestCache = cache.NewBoltDBCache(db, []byte("requestsBucket"))
-		metadataCache = cache.NewBoltDBCache(db, []byte("metadataBucket"))
 		tokenCache = cache.NewBoltDBCache(db, []byte(backends.TokenBucketName))
 		userCache = cache.NewBoltDBCache(db, []byte(backends.UserBucketName))
-	} else if *database == inmemoryBackend {
-		log.Info("Creating in memory map backend...")
-		log.Warn("Turning off authentication...")
-		cfg.AuthEnabled = false
 
+		log.Info("Using boltdb backend")
+	} else if *database == inmemoryBackend {
 		requestCache = cache.NewInMemoryCache()
-		metadataCache = cache.NewInMemoryCache()
 		tokenCache = cache.NewInMemoryCache()
 		userCache = cache.NewInMemoryCache()
+
+		log.Info("Using memory backend")
 	} else {
-		log.Fatalf("unknown database type chosen: %s", *database)
+		log.WithFields(log.Fields{
+			"database": *database,
+		}).Fatalf("Unknown database type")
+	}
+	cfg.DisableCache = *disableCache
+	if cfg.DisableCache {
+		requestCache = nil
+
+		log.Info("Request cache has been disabled")
+	}
+
+	if *proxyAuthorizationHeader == "header-auth" {
+		log.Warnf("Proxy authentication will use `X-HOVERFLY-AUTHORIZATION` instead of `Proxy-Authorization`")
+		cfg.ProxyAuthorizationHeader = "X-HOVERFLY-AUTHORIZATION"
+		log.Warnf("Setting Hoverfly to only proxy HTTPS requests")
+		cfg.HttpsOnly = true
 	}
 
 	authBackend := backends.NewCacheBasedAuthBackend(tokenCache, userCache)
 
-	hoverfly := hv.GetNewHoverfly(cfg, requestCache, metadataCache, authBackend)
+	hoverfly.Cfg = cfg
+	hoverfly.CacheMatcher = matching.CacheMatcher{
+		RequestCache: requestCache,
+		Webserver:    cfg.Webserver,
+	}
+	hoverfly.Authentication = authBackend
+	hoverfly.HTTP = hv.GetDefaultHoverflyHTTPClient(hoverfly.Cfg.TLSVerification, hoverfly.Cfg.UpstreamProxy)
 
 	// if add new user supplied - adding it to database
-	if *addNew {
-		err := hoverfly.Authentication.AddUser(*addUser, *addPassword, *isAdmin)
+	if *addNew || *authEnabled {
+		var err error
+		if *addPasswordHash != "" {
+			err = hoverfly.Authentication.AddUserHashedPassword(*addUser, *addPasswordHash, *isAdmin)
+		} else {
+			err = hoverfly.Authentication.AddUser(*addUser, *addPassword, *isAdmin)
+		}
 		if err != nil {
 			log.WithFields(log.Fields{
 				"error":    err.Error(),
 				"username": *addUser,
-			}).Fatal("failed to add new user")
+			}).Fatal("Failed to add new user")
 		} else {
 			log.WithFields(log.Fields{
 				"username": *addUser,
-			}).Info("user added successfuly")
+			}).Info("User added successfully")
 		}
-		return
+		cfg.AuthEnabled = true
 	}
 	if cfg.AuthEnabled {
 		if os.Getenv(hv.HoverflyAdminUsernameEV) != "" && os.Getenv(hv.HoverflyAdminPasswordEV) != "" {
@@ -308,8 +381,8 @@ func main() {
 		users, err := hoverfly.Authentication.GetAllUsers()
 		if err != nil {
 			log.WithFields(log.Fields{
-				"error": err,
-			}).Fatal("got error while trying to get all users")
+				"error": err.Error(),
+			}).Fatal("Failed when retrieving users")
 		}
 		if len(users) < 1 {
 			createSuperUser(hoverfly)
@@ -325,14 +398,12 @@ func main() {
 				"error":  err.Error(),
 				"import": ev,
 			}).Fatal("Environment variable for importing was set but failed to import this resource")
-		} else {
-			err = hoverfly.MetadataCache.Set([]byte("import_from_env_variable"), []byte(ev))
 		}
 	}
 
 	// importing stuff
 	if len(importFlags) > 0 {
-		for i, v := range importFlags {
+		for _, v := range importFlags {
 			if v != "" {
 				log.WithFields(log.Fields{
 					"import": v,
@@ -343,8 +414,6 @@ func main() {
 						"error":  err.Error(),
 						"import": v,
 					}).Fatal("Failed to import given resource")
-				} else {
-					err = hoverfly.MetadataCache.Set([]byte(fmt.Sprintf("import_%d", i+1)), []byte(v))
 				}
 			}
 		}
@@ -361,7 +430,7 @@ func main() {
 	if err != nil {
 		log.WithFields(log.Fields{
 			"error": err.Error(),
-		}).Fatal("failed to start proxy...")
+		}).Fatal("Failed to start proxy")
 	}
 
 	// starting admin interface, this is blocking
@@ -377,15 +446,15 @@ func createSuperUser(h *hv.Hoverfly) {
 	username, err := reader.ReadString('\n')
 	if err != nil {
 		log.WithFields(log.Fields{
-			"error": err,
-		}).Fatal("error while getting username input")
+			"error": err.Error(),
+		}).Fatal("Failed retrieving username input")
 	}
 	fmt.Print("Enter password (default hf): ")
 	password, err := reader.ReadString('\n')
 	if err != nil {
 		log.WithFields(log.Fields{
-			"error": err,
-		}).Fatal("error while getting password input")
+			"error": err.Error(),
+		}).Fatal("Failed retrieving password input")
 	}
 	// Trim whitespace and use defaults if nothing entered
 	username = strings.TrimSpace(username)
@@ -399,10 +468,12 @@ func createSuperUser(h *hv.Hoverfly) {
 	err = h.Authentication.AddUser(username, password, true)
 	if err != nil {
 		log.WithFields(log.Fields{
-			"error": err,
-		}).Fatal("failed to create user.")
+			"error": err.Error(),
+		}).Fatal("Failed to create user")
 	} else {
-		log.Infof("User: '%s' created.\n", username)
+		log.WithFields(log.Fields{
+			"username": username,
+		}).Info("User created")
 	}
 }
 
@@ -413,7 +484,7 @@ func getInitialMode(cfg *hv.Configuration) string {
 
 	if *capture {
 		// checking whether user supplied other modes
-		if *synthesize == true || *modify == true {
+		if *synthesize == true || *modify == true || *spy == true || *diff == true {
 			log.Fatal("Two or more modes supplied, check your flags")
 		}
 
@@ -425,7 +496,7 @@ func getInitialMode(cfg *hv.Configuration) string {
 			log.Fatal("Synthesize mode chosen although middleware not supplied")
 		}
 
-		if *capture == true || *modify == true {
+		if *capture == true || *modify == true || *spy == true || *diff == true {
 			log.Fatal("Two or more modes supplied, check your flags")
 		}
 
@@ -436,11 +507,23 @@ func getInitialMode(cfg *hv.Configuration) string {
 			log.Fatal("Modify mode chosen although middleware not supplied")
 		}
 
-		if *capture == true || *synthesize == true {
+		if *capture == true || *synthesize == true || *spy == true || *diff == true {
 			log.Fatal("Two or more modes supplied, check your flags")
 		}
 
 		return modes.Modify
+	} else if *spy {
+		if *capture == true || *synthesize == true || *modify == true || *diff == true {
+			log.Fatal("Two or more modes supplied, check your flags")
+		}
+
+		return modes.Spy
+	} else if *diff {
+		if *capture == true || *synthesize == true || *modify == true || *spy == true {
+			log.Fatal("Two or more modes supplied, check your flags")
+		}
+
+		return modes.Diff
 	}
 
 	return modes.Simulate

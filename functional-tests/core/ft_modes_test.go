@@ -1,8 +1,6 @@
 package hoverfly_test
 
 import (
-	"bytes"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/SpectoLabs/hoverfly/functional-tests"
 	"github.com/dghubble/sling"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -17,14 +16,27 @@ import (
 
 var _ = Describe("Running Hoverfly in various modes", func() {
 
+	var (
+		hoverfly *functional_tests.Hoverfly
+	)
+
+	BeforeEach(func() {
+		hoverfly = functional_tests.NewHoverfly()
+	})
+
+	AfterEach(func() {
+		hoverfly.Stop()
+	})
+
 	Context("When running in capture mode", func() {
 
 		var fakeServer *httptest.Server
 		var fakeServerUrl *url.URL
 
 		Context("with middleware", func() {
+
 			BeforeEach(func() {
-				hoverflyCmd = startHoverflyWithMiddleware(adminPort, proxyPort, "python testdata/middleware.py")
+				hoverfly.Start("-middleware", "python testdata/middleware.py")
 
 				fakeServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.Header().Set("Content-Type", "text/plain")
@@ -33,115 +45,21 @@ var _ = Describe("Running Hoverfly in various modes", func() {
 				}))
 
 				fakeServerUrl, _ = url.Parse(fakeServer.URL)
-				SetHoverflyMode("capture")
+
+				hoverfly.SetMode("capture")
 			})
 
 			AfterEach(func() {
-				stopHoverfly()
 				fakeServer.Close()
 			})
 
 			It("Should modify the request but not the response", func() {
-				CallFakeServerThroughProxy(fakeServer)
+				hoverfly.Proxy(sling.New().Get(fakeServer.URL))
 				expectedDestination := strings.Replace(fakeServerUrl.String(), "http://", "", 1)
-				recordsJson, err := ioutil.ReadAll(ExportHoverflyRecords())
-				Expect(err).To(BeNil())
-				Expect(recordsJson).To(MatchJSON(fmt.Sprintf(
-					`{
-					  "data": [
-					    {
-					      "response": {
-						"status": 200,
-						"body": "Hello world",
-						"encodedBody": false,
-						"headers": {
-						  "Content-Length": [
-						    "11"
-						  ],
-						  "Content-Type": [
-						    "text/plain"
-						  ],
-						  "Date": [
-						    "date"
-						  ],
-						  "Hoverfly": [
-						    "Was-Here"
-						  ]
-						}
-					      },
-					      "request": {
-					      	"requestType": "recording",
-						"path": "/",
-						"method": "GET",
-						"destination": "%v",
-						"scheme": "http",
-						"query": "",
-						"body": "CHANGED_REQUEST_BODY",
-						"headers": {
-						  "Accept-Encoding": [
-						    "gzip"
-						  ],
-						  "User-Agent": [
-						    "Go-http-client/1.1"
-						  ]
-						}
-					      }
-					    }
-					  ]
-					}`, expectedDestination)))
-			})
-		})
-	})
+				simulation := hoverfly.ExportSimulation()
 
-	Context("When running in simulate mode", func() {
-
-		var (
-			jsonRequestResponsePair *bytes.Buffer
-		)
-
-		BeforeEach(func() {
-			jsonRequestResponsePair = bytes.NewBufferString(`{"data":[{"request": {"path": "/path1", "method": "GET", "destination": "www.virtual.com", "scheme": "http", "query": "", "body": "", "headers": {"Header": ["value1"]}}, "response": {"status": 201, "encodedBody": false, "body": "body1", "headers": {"Header": ["value1", "value2"]}}}, {"request": {"path": "/path2", "method": "GET", "destination": "www.virtual.com", "scheme": "http", "query": "", "body": "", "headers": {"Header": ["value2"]}}, "response": {"status": 202, "body": "body2", "headers": {"Header": ["value2"]}}}]}`)
-		})
-
-		Context("without middleware", func() {
-
-			BeforeEach(func() {
-				hoverflyCmd = startHoverfly(adminPort, proxyPort)
-				SetHoverflyMode("simulate")
-				ImportHoverflyRecords(jsonRequestResponsePair)
-			})
-
-			AfterEach(func() {
-				stopHoverfly()
-			})
-
-			It("should return the cached response", func() {
-				resp := DoRequestThroughProxy(sling.New().Get("http://www.virtual.com/path1"))
-				Expect(resp.StatusCode).To(Equal(201))
-				body, err := ioutil.ReadAll(resp.Body)
-				Expect(err).To(BeNil())
-				Expect(string(body)).To(Equal("body1"))
-				Expect(resp.Header).To(HaveKeyWithValue("Header", []string{"value1", "value2"}))
-			})
-		})
-
-		Context("with middleware", func() {
-
-			BeforeEach(func() {
-				hoverflyCmd = startHoverflyWithMiddleware(adminPort, proxyPort, "python testdata/middleware.py")
-				SetHoverflyMode("simulate")
-				ImportHoverflyRecords(jsonRequestResponsePair)
-			})
-
-			It("should apply middleware to the cached response", func() {
-				resp := DoRequestThroughProxy(sling.New().Get("http://www.virtual.com/path2"))
-				body, err := ioutil.ReadAll(resp.Body)
-				Expect(err).To(BeNil())
-				Expect(string(body)).To(Equal("CHANGED_RESPONSE_BODY"))
-			})
-
-			AfterEach(func() {
-				stopHoverfly()
+				Expect(*simulation.RequestResponsePairs[0].RequestMatcher.Destination.ExactMatch).To(Equal(expectedDestination))
+				Expect(*simulation.RequestResponsePairs[0].RequestMatcher.Body.ExactMatch).To(Equal("CHANGED_REQUEST_BODY"))
 			})
 		})
 	})
@@ -151,37 +69,28 @@ var _ = Describe("Running Hoverfly in various modes", func() {
 		Context("With middleware", func() {
 
 			BeforeEach(func() {
-				hoverflyCmd = startHoverflyWithMiddleware(adminPort, proxyPort, "python testdata/middleware.py")
-				SetHoverflyMode("synthesize")
+				hoverfly.Start("-middleware", "python testdata/middleware.py")
+				hoverfly.SetMode("synthesize")
 			})
 
 			It("Should generate responses using middleware", func() {
-				resp := DoRequestThroughProxy(sling.New().Get("http://www.virtual.com/path2"))
+				resp := hoverfly.Proxy(sling.New().Get("http://www.virtual.com/path2"))
 				body, err := ioutil.ReadAll(resp.Body)
 				Expect(err).To(BeNil())
 				Expect(string(body)).To(Equal("CHANGED_RESPONSE_BODY"))
 			})
-
-			AfterEach(func() {
-				stopHoverfly()
-			})
-
 		})
 
 		Context("Without middleware", func() {
 
 			BeforeEach(func() {
-				hoverflyCmd = startHoverfly(adminPort, proxyPort)
-				SetHoverflyMode("synthesize")
+				hoverfly.Start()
+				hoverfly.SetMode("synthesize")
 			})
 
 			It("Should fail to generate responses using middleware", func() {
-				resp := DoRequestThroughProxy(sling.New().Get("http://www.virtual.com/path2"))
+				resp := hoverfly.Proxy(sling.New().Get("http://www.virtual.com/path2"))
 				Expect(resp.StatusCode).To(Equal(http.StatusBadGateway))
-			})
-
-			AfterEach(func() {
-				stopHoverfly()
 			})
 		})
 	})
@@ -190,15 +99,18 @@ var _ = Describe("Running Hoverfly in various modes", func() {
 
 		var fakeServer *httptest.Server
 		var requestBody string
+		var requestQuery string
 
 		Context("With middleware", func() {
 
 			BeforeEach(func() {
-				hoverflyCmd = startHoverflyWithMiddleware(adminPort, proxyPort, "python testdata/middleware.py")
-				SetHoverflyMode("modify")
+				hoverfly.Start("-middleware", "python testdata/middleware.py")
+				hoverfly.SetMode("modify")
+
 				fakeServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					body, _ := ioutil.ReadAll(r.Body)
 					requestBody = string(body)
+					requestQuery = r.URL.RawQuery
 					w.Header().Set("Content-Type", "text/plain")
 					w.Header().Set("Date", "date")
 					w.Write([]byte("Hello world"))
@@ -206,20 +118,20 @@ var _ = Describe("Running Hoverfly in various modes", func() {
 			})
 
 			It("Should modify the request using middleware", func() {
-				resp := DoRequestThroughProxy(sling.New().Get(fakeServer.URL))
+				resp := hoverfly.Proxy(sling.New().Get(fakeServer.URL + "?test=a&test=b c,d"))
 				Expect(resp.StatusCode).To(Equal(200))
 				Expect(requestBody).To(Equal("CHANGED_REQUEST_BODY"))
+				Expect(requestQuery).To(Equal("test=a&test=b%20c,d"))
 			})
 
 			It("Should modify the response using middleware", func() {
-				resp := DoRequestThroughProxy(sling.New().Get(fakeServer.URL))
+				resp := hoverfly.Proxy(sling.New().Get(fakeServer.URL))
 				body, err := ioutil.ReadAll(resp.Body)
 				Expect(err).To(BeNil())
 				Expect(string(body)).To(Equal("CHANGED_RESPONSE_BODY"))
 			})
 
 			AfterEach(func() {
-				stopHoverfly()
 				fakeServer.Close()
 			})
 		})
@@ -227,21 +139,15 @@ var _ = Describe("Running Hoverfly in various modes", func() {
 		Context("Without middleware", func() {
 
 			BeforeEach(func() {
-				hoverflyCmd = startHoverfly(adminPort, proxyPort)
-				SetHoverflyMode("modify")
+				hoverfly.Start()
+				hoverfly.SetMode("modify")
 			})
 
 			It("Should fail to generate responses using middleware", func() {
-				resp := DoRequestThroughProxy(sling.New().Get(fakeServer.URL))
+				resp := hoverfly.Proxy(sling.New().Get(fakeServer.URL))
 				Expect(resp.StatusCode).To(Equal(http.StatusBadGateway))
 			})
-
-			AfterEach(func() {
-				stopHoverfly()
-				fakeServer.Close()
-			})
 		})
-
 	})
 
 	Context("Using middleware with binary data", func() {
@@ -249,22 +155,18 @@ var _ = Describe("Running Hoverfly in various modes", func() {
 		var expectedImage []byte
 
 		BeforeEach(func() {
-			hoverflyCmd = startHoverflyWithMiddleware(adminPort, proxyPort, "python testdata/binary_middleware.py")
-			SetHoverflyMode("synthesize")
+			hoverfly.Start("-middleware", "python testdata/binary_middleware.py")
+			hoverfly.SetMode("synthesize")
 			pwd, _ := os.Getwd()
 			expectedFile := "/testdata/1x1.png"
 			expectedImage, _ = ioutil.ReadFile(pwd + expectedFile)
 		})
 
 		It("Should render an image correctly after base64 encoding it using middleware", func() {
-			resp := DoRequestThroughProxy(sling.New().Get("http://www.foo.com"))
+			resp := hoverfly.Proxy(sling.New().Get("http://www.foo.com"))
 			responseBytes, err := ioutil.ReadAll(resp.Body)
 			Expect(err).To(BeNil())
 			Expect(responseBytes).To(Equal(expectedImage))
-		})
-
-		AfterEach(func() {
-			stopHoverfly()
 		})
 	})
 })

@@ -103,7 +103,7 @@ func TestHoverflyMiddlewareHandlerPutWill422ErrorIfHoverflyErrors(t *testing.T) 
 	errorViewResponse, err := unmarshalErrorView(response.Body)
 	Expect(err).To(BeNil())
 
-	Expect(errorViewResponse.Error).To(Equal("Invalid middleware: error"))
+	Expect(errorViewResponse.Error).To(Equal("error"))
 }
 
 func TestHoverflyMiddlewareHandlerPutWill400ErrorIfJsonIsBad(t *testing.T) {
@@ -114,7 +114,7 @@ func TestHoverflyMiddlewareHandlerPutWill400ErrorIfJsonIsBad(t *testing.T) {
 
 	bodyBytes := []byte("{{}{}}")
 
-	request, err := http.NewRequest("PUT", "/api/v2/hoverfly/mode", ioutil.NopCloser(bytes.NewBuffer(bodyBytes)))
+	request, err := http.NewRequest("PUT", "/api/v2/hoverfly/middleware", ioutil.NopCloser(bytes.NewBuffer(bodyBytes)))
 	Expect(err).To(BeNil())
 
 	response := makeRequestOnHandler(unit.Put, request)
@@ -124,6 +124,21 @@ func TestHoverflyMiddlewareHandlerPutWill400ErrorIfJsonIsBad(t *testing.T) {
 	Expect(err).To(BeNil())
 
 	Expect(errorViewResponse.Error).To(Equal("Malformed JSON"))
+}
+
+func Test_HoverflyMiddlewareHandler_Options_GetsOptions(t *testing.T) {
+	RegisterTestingT(t)
+
+	var stubHoverfly HoverflyMiddlewareStub
+	unit := HoverflyMiddlewareHandler{Hoverfly: &stubHoverfly}
+
+	request, err := http.NewRequest("OPTIONS", "/api/v2/hoverfly/middleware", nil)
+	Expect(err).To(BeNil())
+
+	response := makeRequestOnHandler(unit.Options, request)
+
+	Expect(response.Code).To(Equal(http.StatusOK))
+	Expect(response.Header().Get("Allow")).To(Equal("OPTIONS, GET, PUT"))
 }
 
 func unmarshalMiddlewareView(buffer *bytes.Buffer) (MiddlewareView, error) {

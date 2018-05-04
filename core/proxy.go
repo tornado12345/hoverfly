@@ -1,57 +1,70 @@
 package hoverfly
 
 import (
-	"bufio"
-	"net"
+	"bytes"
+	"encoding/base64"
+	"io/ioutil"
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
+
+	"fmt"
 
 	log "github.com/Sirupsen/logrus"
+	"github.com/SpectoLabs/goproxy"
+	"github.com/SpectoLabs/goproxy/ext/auth"
+	"github.com/SpectoLabs/hoverfly/core/authentication"
+	"github.com/SpectoLabs/hoverfly/core/authentication/backends"
 	"github.com/SpectoLabs/hoverfly/core/util"
-	"github.com/elazarl/goproxy"
 )
+
+var ProxyAuthorizationHeader string
 
 // Creates goproxy.ProxyHttpServer and configures it to be used as a proxy for Hoverfly
 // goproxy is given handlers that use the Hoverfly request processing
 func NewProxy(hoverfly *Hoverfly) *goproxy.ProxyHttpServer {
+	ProxyAuthorizationHeader = hoverfly.Cfg.ProxyAuthorizationHeader
+
 	// creating proxy
 	proxy := goproxy.NewProxyHttpServer()
 
 	proxy.OnRequest(goproxy.UrlMatches(regexp.MustCompile(hoverfly.Cfg.Destination))).
-		HandleConnect(goproxy.AlwaysMitm)
-
-	// enable curl -p for all hosts on port 80
-	proxy.OnRequest(goproxy.UrlMatches(regexp.MustCompile(hoverfly.Cfg.Destination))).
-		HijackConnect(func(req *http.Request, client net.Conn, ctx *goproxy.ProxyCtx) {
-			defer func() {
-				if e := recover(); e != nil {
-					ctx.Logf("error connecting to remote: %v", e)
-					client.Write([]byte("HTTP/1.1 500 Cannot reach destination\r\n\r\n"))
-				}
-				client.Close()
-			}()
-			clientBuf := bufio.NewReadWriter(bufio.NewReader(client), bufio.NewWriter(client))
-			remote, err := net.Dial("tcp", req.URL.Host)
-			orPanic(err)
-			remoteBuf := bufio.NewReadWriter(bufio.NewReader(remote), bufio.NewWriter(remote))
-			for {
-				req, err := http.ReadRequest(clientBuf.Reader)
-				orPanic(err)
-				orPanic(req.Write(remoteBuf))
-				orPanic(remoteBuf.Flush())
-				resp, err := http.ReadResponse(remoteBuf.Reader, req)
-
-				orPanic(err)
-				orPanic(resp.Write(clientBuf.Writer))
-				orPanic(clientBuf.Flush())
+		HandleConnect(goproxy.FuncHttpsHandler(func(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
+			if hoverfly.Cfg.PlainHttpTunneling && !strings.HasSuffix(host, ":443") {
+				return goproxy.HTTPMitmConnect, host
 			}
+			return goproxy.MitmConnect, host
+		}))
+
+	if hoverfly.Cfg.HttpsOnly {
+		log.Info("Disabling HTTP")
+		proxy.DisableNonTls(true)
+	}
+
+	if hoverfly.Cfg.AuthEnabled {
+		log.Info("Enabling proxy authentication")
+		proxyBasicAndBearer(proxy, "hoverfly", func(user, password string) bool {
+
+			proxyUser := &backends.User{
+				Username: user,
+				Password: password,
+			}
+
+			responseStatus, _ := authentication.Login(proxyUser, hoverfly.Authentication, nil, 0)
+
+			return responseStatus == http.StatusOK
+		}, func(headerToken string) bool {
+			return authentication.IsJwtTokenValid(headerToken, hoverfly.Authentication, hoverfly.Cfg.SecretKey, hoverfly.Cfg.JWTExpirationDelta)
 		})
+	}
 
 	// processing connections
 	proxy.OnRequest(goproxy.UrlMatches(regexp.MustCompile(hoverfly.Cfg.Destination))).DoFunc(
 		func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+			startTime := time.Now()
 			resp := hoverfly.processRequest(r)
+			hoverfly.Journal.NewEntry(r, resp, hoverfly.Cfg.Mode, startTime)
 			return r, resp
 		})
 
@@ -68,6 +81,16 @@ func NewProxy(hoverfly *Hoverfly) *goproxy.ProxyHttpServer {
 				return r, nil
 			})
 	}
+
+	// Set content length
+	proxy.OnResponse().DoFunc(func(r *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
+		if r.Header.Get("Content-Length") == "" {
+			responseBytes, _ := ioutil.ReadAll(r.Body)
+			r.Header.Set("Content-Length", fmt.Sprintf("%v", len(responseBytes)))
+			r.Body = ioutil.NopCloser(bytes.NewReader(responseBytes))
+		}
+		return r
+	})
 
 	// intercepts response
 	proxy.OnResponse(goproxy.UrlMatches(regexp.MustCompile(hoverfly.Cfg.Destination))).DoFunc(
@@ -94,7 +117,10 @@ func NewWebserverProxy(hoverfly *Hoverfly) *goproxy.ProxyHttpServer {
 	proxy := goproxy.NewProxyHttpServer()
 	proxy.NonproxyHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		log.Warn("NonproxyHandler")
+		startTime := time.Now()
+		r.URL.Scheme = "http"
 		resp := hoverfly.processRequest(r)
+		hoverfly.Journal.NewEntry(r, resp, hoverfly.Cfg.Mode, startTime)
 		body, err := util.GetResponseBody(resp)
 
 		if err != nil {
@@ -139,4 +165,69 @@ func NewWebserverProxy(hoverfly *Hoverfly) *goproxy.ProxyHttpServer {
 	}).Info("Webserver prepared...")
 
 	return proxy
+}
+
+func unauthorizedError(request *http.Request, realm, message string) *http.Response {
+	response := auth.BasicUnauthorized(request, realm)
+	response.Body = ioutil.NopCloser(bytes.NewBuffer([]byte(message)))
+	response.ContentLength = int64(len(message))
+
+	return response
+}
+
+func proxyBasicAndBearer(proxy *goproxy.ProxyHttpServer, realm string, basicFunc func(user, passwd string) bool, bearerFunc func(token string) bool) {
+
+	proxy.OnRequest().Do(goproxy.FuncReqHandler(func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+		err := authFromHeader(req, basicFunc, bearerFunc)
+		if err != nil {
+			return nil, unauthorizedError(req, realm, err.Error())
+		}
+		return req, nil
+	}))
+
+	proxy.OnRequest().HandleConnect(goproxy.FuncHttpsHandler(func(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
+		err := authFromHeader(ctx.Req, basicFunc, bearerFunc)
+		if err != nil {
+			ctx.Resp = unauthorizedError(ctx.Req, realm, err.Error())
+			return goproxy.RejectConnect, host
+		}
+		return goproxy.MitmConnect, host
+	}))
+}
+
+func authFromHeader(req *http.Request, basicFunc func(user, passwd string) bool, bearerFunc func(token string) bool) error {
+	headerValue := req.Header.Get(ProxyAuthorizationHeader)
+
+	if ProxyAuthorizationHeader != "Proxy-Authorization" && req.Header.Get("Proxy-Authorization") != "" {
+		return fmt.Errorf("407 `Proxy-Authorization` header is disabled, use `X-HOVERFLY-AUTHORIZATION` instead")
+	}
+
+	authheader := strings.SplitN(headerValue, " ", 2)
+	req.Header.Del(ProxyAuthorizationHeader)
+	if len(authheader) != 2 {
+		return fmt.Errorf("407 Proxy authentication required")
+	}
+	if authheader[0] == "Basic" {
+		userpassraw, err := base64.StdEncoding.DecodeString(authheader[1])
+		if err != nil {
+			return fmt.Errorf("407 Proxy authentication required")
+		}
+		userpass := strings.SplitN(string(userpassraw), ":", 2)
+		if len(userpass) != 2 {
+			return fmt.Errorf("407 Proxy authentication required")
+		}
+		result := basicFunc(userpass[0], userpass[1])
+		if result == false {
+			return fmt.Errorf("407 Proxy authentication required")
+		}
+	} else if authheader[0] == "Bearer" {
+		result := bearerFunc(authheader[1])
+		if result == false {
+			return fmt.Errorf("407 Proxy authentication required")
+		}
+	} else {
+		return fmt.Errorf("407 Unknown authentication type `%v`, only `Basic` or `Bearer` are supported", authheader[0])
+	}
+
+	return nil
 }
