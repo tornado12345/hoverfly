@@ -63,4 +63,15 @@
 
 [[constraint]]
   name = "github.com/SpectoLabs/goproxy"
-  revision = "1dea5983e671e3bdefb224f2683e5c23678be35e"
+  revision = "master"
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/icrowley/fake"
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/jackwakefield/gopac"
+[[constraint]]
+  branch = "master"
+  name = "gonum.org/v1/gonum"

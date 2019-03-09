@@ -86,11 +86,18 @@ func NewRequestDetailsFromHttpRequest(req *http.Request) (RequestDetails, error)
 		urlPath = req.URL.Path
 	}
 
+	// Proxy tunnel request gives relative URL, and we should manually set scheme to HTTP
+	var scheme string
+	if req.URL.IsAbs()  {
+		scheme = req.URL.Scheme
+	} else {
+		scheme = "http"
+	}
 	requestDetails := RequestDetails{
 		Path:        urlPath,
 		Method:      req.Method,
 		Destination: strings.ToLower(req.Host),
-		Scheme:      req.URL.Scheme,
+		Scheme:      scheme,
 		Query:       req.URL.Query(),
 		Body:        string(reqBody),
 		Headers:     req.Header,
@@ -116,6 +123,7 @@ func (this *RequestDetails) ConvertToRequestDetailsView() v2.RequestDetailsView 
 		Destination: &this.Destination,
 		Scheme:      &this.Scheme,
 		Query:       &queryString,
+		QueryMap:    this.Query,
 		Body:        &this.Body,
 		Headers:     this.Headers,
 	}
@@ -240,7 +248,7 @@ func (r *ResponseDetails) ConvertToResponseDetailsView() v2.ResponseDetailsView 
 	}
 }
 
-func (r *ResponseDetails) ConvertToResponseDetailsViewV4() v2.ResponseDetailsViewV4 {
+func (r *ResponseDetails) ConvertToResponseDetailsViewV5() v2.ResponseDetailsViewV5 {
 	needsEncoding := false
 
 	// Check headers for gzip
@@ -264,7 +272,7 @@ func (r *ResponseDetails) ConvertToResponseDetailsViewV4() v2.ResponseDetailsVie
 		body = base64.StdEncoding.EncodeToString([]byte(r.Body))
 	}
 
-	return v2.ResponseDetailsViewV4{
+	return v2.ResponseDetailsViewV5{
 		Status:           r.Status,
 		Body:             body,
 		Headers:          r.Headers,

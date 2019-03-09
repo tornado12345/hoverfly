@@ -1,7 +1,7 @@
 package modes
 
 import (
-	"errors"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"testing"
@@ -9,8 +9,8 @@ import (
 	"bytes"
 	"encoding/json"
 
+	"github.com/SpectoLabs/hoverfly/core/errors"
 	"github.com/SpectoLabs/hoverfly/core/handlers/v2"
-	"github.com/SpectoLabs/hoverfly/core/matching"
 	"github.com/SpectoLabs/hoverfly/core/models"
 	. "github.com/onsi/gomega"
 )
@@ -18,48 +18,52 @@ import (
 type hoverflyDiffStub struct{}
 
 func (this hoverflyDiffStub) DoRequest(request *http.Request) (*http.Response, error) {
-	response := &http.Response{}
-	if request.Host == "error.com" {
-		return nil, errors.New("Could not reach error.com")
-	}
-
-	if request.Host == "positive-match-with-same-response.com" {
+	switch request.Host {
+	case "error.com":
+		return nil, fmt.Errorf("Could not reach error.com")
+	case "positive-match-with-same-response.com":
 		return &http.Response{
 			StatusCode: 200,
 			Body:       ioutil.NopCloser(bytes.NewBufferString("expected")),
 			Header:     map[string][]string{"header": {"expected"}, "source": {"service"}},
 		}, nil
-	} else if request.Host == "positive-match-with-different-response.com" || request.Host == "negative-match.com" {
+	case "positive-match-with-different-response.com":
 		return &http.Response{
 			StatusCode: 200,
 			Body:       ioutil.NopCloser(bytes.NewBufferString("actual")),
 			Header:     map[string][]string{"header": {"actual"}, "source": {"service"}},
 		}, nil
+	case "negative-match.com":
+		return &http.Response{
+			StatusCode: 200,
+			Body:       ioutil.NopCloser(bytes.NewBufferString("actual")),
+			Header:     map[string][]string{"header": {"actual"}, "source": {"service"}},
+		}, nil
+	default:
+		return &http.Response{
+			StatusCode: 200,
+			Body:       ioutil.NopCloser(bytes.NewBufferString("test")),
+		}, nil
 	}
-
-	response.StatusCode = 200
-	response.Body = ioutil.NopCloser(bytes.NewBufferString("test"))
-
-	return response, nil
 }
 
-func (this hoverflyDiffStub) GetResponse(requestDetails models.RequestDetails) (*models.ResponseDetails, *matching.MatchingError) {
-	if requestDetails.Destination == "positive-match-with-same-response.com" {
+func (this hoverflyDiffStub) GetResponse(requestDetails models.RequestDetails) (*models.ResponseDetails, *errors.HoverflyError) {
+	switch requestDetails.Destination {
+	case "positive-match-with-same-response.com":
 		return &models.ResponseDetails{
 			Status:  200,
 			Body:    "expected",
 			Headers: map[string][]string{"header": {"expected"}},
 		}, nil
-	} else if requestDetails.Destination == "positive-match-with-different-response.com" {
+	case "positive-match-with-different-response.com":
 		return &models.ResponseDetails{
 			Status:  200,
 			Body:    "simulated",
 			Headers: map[string][]string{"header": {"simulated"}, "source": {"simulation"}},
 		}, nil
-	} else {
-		return nil, &matching.MatchingError{
-			Description: "matching-error",
-			StatusCode:  500,
+	default:
+		return nil, &errors.HoverflyError{
+			Message: "matching-error",
 		}
 	}
 }
@@ -127,8 +131,117 @@ func Test_DiffMode_WhenGivenAMatchingRequestReturningDifferentResponse(t *testin
 	Expect(response.Header["header"]).To(Equal([]string{"actual"}))
 	Expect(response.Header["source"]).To(Equal([]string{"service"}))
 	Expect(unit.DiffReport.DiffEntries).To(ConsistOf(
-		v2.DiffReportEntry{"header/source", "[simulation]", "[service]"},
+		v2.DiffReportEntry{Field: "header/source", Expected: "[simulation]", Actual: "[service]"},
 		v2.DiffReportEntry{"header/header", "[simulated]", "[actual]"},
+		v2.DiffReportEntry{"body", "simulated", "actual"}))
+}
+
+func Test_DiffMode_BlacklistAllHeaders(t *testing.T) {
+	RegisterTestingT(t)
+
+	//given
+	unit := &DiffMode{
+		Hoverfly: hoverflyDiffStub{},
+		Arguments: ModeArguments{
+			Headers: []string{
+				"*",
+			},
+		},
+	}
+
+	request := models.RequestDetails{
+		Scheme:      "http",
+		Destination: "positive-match-with-different-response.com",
+	}
+
+	// when
+	response, err := unit.Process(nil, request)
+
+	// then
+	Expect(err).To(BeNil())
+	Expect(response.StatusCode).To(Equal(http.StatusOK))
+
+	responseBody, err := ioutil.ReadAll(response.Body)
+	Expect(err).To(BeNil())
+
+	Expect(string(responseBody)).To(Equal("actual"))
+	Expect(len(response.Header)).To(Equal(2))
+	Expect(response.Header["header"]).To(Equal([]string{"actual"}))
+	Expect(response.Header["source"]).To(Equal([]string{"service"}))
+	Expect(unit.DiffReport.DiffEntries).To(ConsistOf(
+		v2.DiffReportEntry{"body", "simulated", "actual"}))
+}
+
+func Test_DiffMode_BlacklistOneHeader(t *testing.T) {
+	RegisterTestingT(t)
+
+	//given
+	unit := &DiffMode{
+		Hoverfly: hoverflyDiffStub{},
+		Arguments: ModeArguments{
+			Headers: []string{
+				"header",
+			},
+		},
+	}
+
+	request := models.RequestDetails{
+		Scheme:      "http",
+		Destination: "positive-match-with-different-response.com",
+	}
+
+	// when
+	response, err := unit.Process(nil, request)
+
+	// then
+	Expect(err).To(BeNil())
+	Expect(response.StatusCode).To(Equal(http.StatusOK))
+
+	responseBody, err := ioutil.ReadAll(response.Body)
+	Expect(err).To(BeNil())
+
+	Expect(string(responseBody)).To(Equal("actual"))
+	Expect(len(response.Header)).To(Equal(2))
+	Expect(response.Header["header"]).To(Equal([]string{"actual"}))
+	Expect(response.Header["source"]).To(Equal([]string{"service"}))
+	Expect(unit.DiffReport.DiffEntries).To(ConsistOf(
+		v2.DiffReportEntry{"header/source", "[simulation]", "[service]"},
+		v2.DiffReportEntry{"body", "simulated", "actual"}))
+}
+
+func Test_DiffMode_BlacklistlistTwoHeaders(t *testing.T) {
+	RegisterTestingT(t)
+
+	//given
+	unit := &DiffMode{
+		Hoverfly: hoverflyDiffStub{},
+		Arguments: ModeArguments{
+			Headers: []string{
+				"header", "source",
+			},
+		},
+	}
+
+	request := models.RequestDetails{
+		Scheme:      "http",
+		Destination: "positive-match-with-different-response.com",
+	}
+
+	// when
+	response, err := unit.Process(nil, request)
+
+	// then
+	Expect(err).To(BeNil())
+	Expect(response.StatusCode).To(Equal(http.StatusOK))
+
+	responseBody, err := ioutil.ReadAll(response.Body)
+	Expect(err).To(BeNil())
+
+	Expect(string(responseBody)).To(Equal("actual"))
+	Expect(len(response.Header)).To(Equal(2))
+	Expect(response.Header["header"]).To(Equal([]string{"actual"}))
+	Expect(response.Header["source"]).To(Equal([]string{"service"}))
+	Expect(unit.DiffReport.DiffEntries).To(ConsistOf(
 		v2.DiffReportEntry{"body", "simulated", "actual"}))
 }
 
@@ -163,13 +276,7 @@ func Test_DiffMode_WhenGivenANonMatchingRequestDiffIsEmpty(t *testing.T) {
 	Expect(unit.DiffReport.DiffEntries).To(BeEmpty())
 }
 
-type paramDiff struct {
-	param    string
-	expected string
-	actual   string
-}
-
-func TestJsonDiff_WhenDifferentThenCreatesErrorMessage(t *testing.T) {
+func Test_JsonDiff_WhenDifferentThenCreatesErrorMessage(t *testing.T) {
 	RegisterTestingT(t)
 
 	//when
@@ -219,7 +326,7 @@ func TestJsonDiff_WhenDifferentThenCreatesErrorMessage(t *testing.T) {
 		v2.DiffReportEntry{"test/nested/baz", "boo", "bar"}))
 }
 
-func TestJsonDiff_WhenExpectedEmptyThenReturnsTrue(t *testing.T) {
+func Test_JsonDiff_WhenExpectedEmptyThenReturnsTrue(t *testing.T) {
 	RegisterTestingT(t)
 
 	// given
@@ -248,7 +355,7 @@ func TestJsonDiff_WhenExpectedEmptyThenReturnsTrue(t *testing.T) {
 	Expect(len(diffMode.DiffReport.DiffEntries)).To(Equal(0))
 }
 
-func TestJsonDiff_WhenSameThenReturnsTrue(t *testing.T) {
+func Test_JsonDiff_WhenSameThenReturnsTrue(t *testing.T) {
 	RegisterTestingT(t)
 
 	// given

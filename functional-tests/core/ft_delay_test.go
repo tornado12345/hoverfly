@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/SpectoLabs/hoverfly/functional-tests"
+	"github.com/SpectoLabs/hoverfly/functional-tests/testdata"
 	"github.com/dghubble/sling"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -30,7 +31,6 @@ var _ = Describe("Running Hoverfly with delays", func() {
 	Context("When running in capture mode", func() {
 
 		var fakeServer *httptest.Server
-		var fakeServerUrl *url.URL
 
 		BeforeEach(func() {
 			hoverfly.Start()
@@ -41,7 +41,7 @@ var _ = Describe("Running Hoverfly with delays", func() {
 				w.Write([]byte("Hello world"))
 			}))
 
-			fakeServerUrl, _ = url.Parse(fakeServer.URL)
+			url.Parse(fakeServer.URL)
 			hoverfly.SetMode("capture")
 		})
 
@@ -65,7 +65,7 @@ var _ = Describe("Running Hoverfly with delays", func() {
 
 		BeforeEach(func() {
 			hoverfly.Start()
-			hoverfly.ImportSimulation(functional_tests.JsonPayloadWithDelays)
+			hoverfly.ImportSimulation(testdata.V3Delays)
 			hoverfly.SetMode("simulate")
 		})
 
@@ -85,7 +85,7 @@ var _ = Describe("Running Hoverfly with delays", func() {
 
 		BeforeEach(func() {
 			hoverfly.Start("-middleware", "python testdata/middleware.py")
-			hoverfly.ImportSimulation(functional_tests.JsonPayloadWithDelays)
+			hoverfly.ImportSimulation(testdata.V3Delays)
 			hoverfly.SetMode("synthesize")
 		})
 
@@ -106,7 +106,7 @@ var _ = Describe("Running Hoverfly with delays", func() {
 
 		BeforeEach(func() {
 			hoverfly.Start("-middleware", "python testdata/middleware.py")
-			hoverfly.ImportSimulation(functional_tests.JsonPayloadWithDelays)
+			hoverfly.ImportSimulation(testdata.V3Delays)
 			hoverfly.SetMode("modify")
 		})
 

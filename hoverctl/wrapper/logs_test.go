@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/SpectoLabs/hoverfly/core/handlers/v2"
-	"github.com/SpectoLabs/hoverfly/core/util"
+	"github.com/SpectoLabs/hoverfly/core/matching/matchers"
 	. "github.com/onsi/gomega"
 )
 
@@ -14,24 +14,33 @@ func Test_GetLogs_GetsLogsWithCorrect_Text_Plain_AcceptHeader(t *testing.T) {
 	RegisterTestingT(t)
 
 	hoverfly.DeleteSimulation()
-	hoverfly.PutSimulation(v2.SimulationViewV4{
-		v2.DataViewV4{
-			RequestResponsePairs: []v2.RequestMatcherResponsePairViewV4{
-				v2.RequestMatcherResponsePairViewV4{
-					RequestMatcher: v2.RequestMatcherViewV4{
-						Method: &v2.RequestFieldMatchersView{
-							ExactMatch: util.StringToPointer("GET"),
+	hoverfly.PutSimulation(v2.SimulationViewV5{
+		v2.DataViewV5{
+			RequestResponsePairs: []v2.RequestMatcherResponsePairViewV5{
+				{
+					RequestMatcher: v2.RequestMatcherViewV5{
+						Method: []v2.MatcherViewV5{
+							{
+								Matcher: matchers.Exact,
+								Value:   "GET",
+							},
 						},
-						Path: &v2.RequestFieldMatchersView{
-							ExactMatch: util.StringToPointer("/api/v2/logs"),
+						Path: []v2.MatcherViewV5{
+							{
+								Matcher: matchers.Exact,
+								Value:   "/api/v2/logs",
+							},
 						},
-						Headers: map[string][]string{
-							"Accept": []string{
-								"text/plain",
+						Headers: map[string][]v2.MatcherViewV5{
+							"Accept": {
+								{
+									Matcher: matchers.Exact,
+									Value:   "text/plain",
+								},
 							},
 						},
 					},
-					Response: v2.ResponseDetailsViewV4{
+					Response: v2.ResponseDetailsViewV5{
 						Status: 200,
 						Body:   "logs line 1\nlogs line 2",
 					},
@@ -55,24 +64,33 @@ func Test_GetLogs_CanHandleEmptyTextPlainLogResponse(t *testing.T) {
 	RegisterTestingT(t)
 
 	hoverfly.DeleteSimulation()
-	hoverfly.PutSimulation(v2.SimulationViewV4{
-		v2.DataViewV4{
-			RequestResponsePairs: []v2.RequestMatcherResponsePairViewV4{
-				v2.RequestMatcherResponsePairViewV4{
-					RequestMatcher: v2.RequestMatcherViewV4{
-						Method: &v2.RequestFieldMatchersView{
-							ExactMatch: util.StringToPointer("GET"),
+	hoverfly.PutSimulation(v2.SimulationViewV5{
+		v2.DataViewV5{
+			RequestResponsePairs: []v2.RequestMatcherResponsePairViewV5{
+				{
+					RequestMatcher: v2.RequestMatcherViewV5{
+						Method: []v2.MatcherViewV5{
+							{
+								Matcher: matchers.Exact,
+								Value:   "GET",
+							},
 						},
-						Path: &v2.RequestFieldMatchersView{
-							ExactMatch: util.StringToPointer("/api/v2/logs"),
+						Path: []v2.MatcherViewV5{
+							{
+								Matcher: matchers.Exact,
+								Value:   "/api/v2/logs",
+							},
 						},
-						Headers: map[string][]string{
-							"Accept": []string{
-								"text/plain",
+						Headers: map[string][]v2.MatcherViewV5{
+							"Accept": {
+								{
+									Matcher: matchers.Exact,
+									Value:   "text/plain",
+								},
 							},
 						},
 					},
-					Response: v2.ResponseDetailsViewV4{
+					Response: v2.ResponseDetailsViewV5{
 						Status: 200,
 						Body:   ``,
 					},
@@ -93,24 +111,33 @@ func Test_GetLogs_CanHandleEmptyLineAtEndOfTextPlainLogResponse(t *testing.T) {
 	RegisterTestingT(t)
 
 	hoverfly.DeleteSimulation()
-	hoverfly.PutSimulation(v2.SimulationViewV4{
-		v2.DataViewV4{
-			RequestResponsePairs: []v2.RequestMatcherResponsePairViewV4{
-				v2.RequestMatcherResponsePairViewV4{
-					RequestMatcher: v2.RequestMatcherViewV4{
-						Method: &v2.RequestFieldMatchersView{
-							ExactMatch: util.StringToPointer("GET"),
+	hoverfly.PutSimulation(v2.SimulationViewV5{
+		v2.DataViewV5{
+			RequestResponsePairs: []v2.RequestMatcherResponsePairViewV5{
+				{
+					RequestMatcher: v2.RequestMatcherViewV5{
+						Method: []v2.MatcherViewV5{
+							{
+								Matcher: matchers.Exact,
+								Value:   "GET",
+							},
 						},
-						Path: &v2.RequestFieldMatchersView{
-							ExactMatch: util.StringToPointer("/api/v2/logs"),
+						Path: []v2.MatcherViewV5{
+							{
+								Matcher: matchers.Exact,
+								Value:   "/api/v2/logs",
+							},
 						},
-						Headers: map[string][]string{
-							"Accept": []string{
-								"text/plain",
+						Headers: map[string][]v2.MatcherViewV5{
+							"Accept": {
+								{
+									Matcher: matchers.Exact,
+									Value:   "text/plain",
+								},
 							},
 						},
 					},
-					Response: v2.ResponseDetailsViewV4{
+					Response: v2.ResponseDetailsViewV5{
 						Status: 200,
 						Body:   "this is log message one\n",
 					},
@@ -133,24 +160,33 @@ func Test_GetLogs_GetsLogsWithCorrect_JSON_AcceptHeader(t *testing.T) {
 	RegisterTestingT(t)
 
 	hoverfly.DeleteSimulation()
-	hoverfly.PutSimulation(v2.SimulationViewV4{
-		v2.DataViewV4{
-			RequestResponsePairs: []v2.RequestMatcherResponsePairViewV4{
-				v2.RequestMatcherResponsePairViewV4{
-					RequestMatcher: v2.RequestMatcherViewV4{
-						Method: &v2.RequestFieldMatchersView{
-							ExactMatch: util.StringToPointer("GET"),
+	hoverfly.PutSimulation(v2.SimulationViewV5{
+		v2.DataViewV5{
+			RequestResponsePairs: []v2.RequestMatcherResponsePairViewV5{
+				{
+					RequestMatcher: v2.RequestMatcherViewV5{
+						Method: []v2.MatcherViewV5{
+							{
+								Matcher: matchers.Exact,
+								Value:   "GET",
+							},
 						},
-						Path: &v2.RequestFieldMatchersView{
-							ExactMatch: util.StringToPointer("/api/v2/logs"),
+						Path: []v2.MatcherViewV5{
+							{
+								Matcher: matchers.Exact,
+								Value:   "/api/v2/logs",
+							},
 						},
-						Headers: map[string][]string{
-							"Accept": []string{
-								"application/json",
+						Headers: map[string][]v2.MatcherViewV5{
+							"Accept": {
+								{
+									Matcher: matchers.Exact,
+									Value:   "application/json",
+								},
 							},
 						},
 					},
-					Response: v2.ResponseDetailsViewV4{
+					Response: v2.ResponseDetailsViewV5{
 						Status: 200,
 						Body:   `{"logs":[{"msg": "logs line 1"}]}`,
 					},
@@ -180,19 +216,25 @@ func Test_GetLogs_ErrorsWhen_HoverflyReturnsNon200(t *testing.T) {
 	RegisterTestingT(t)
 
 	hoverfly.DeleteSimulation()
-	hoverfly.PutSimulation(v2.SimulationViewV4{
-		v2.DataViewV4{
-			RequestResponsePairs: []v2.RequestMatcherResponsePairViewV4{
-				v2.RequestMatcherResponsePairViewV4{
-					RequestMatcher: v2.RequestMatcherViewV4{
-						Method: &v2.RequestFieldMatchersView{
-							ExactMatch: util.StringToPointer("GET"),
+	hoverfly.PutSimulation(v2.SimulationViewV5{
+		v2.DataViewV5{
+			RequestResponsePairs: []v2.RequestMatcherResponsePairViewV5{
+				{
+					RequestMatcher: v2.RequestMatcherViewV5{
+						Method: []v2.MatcherViewV5{
+							{
+								Matcher: matchers.Exact,
+								Value:   "GET",
+							},
 						},
-						Path: &v2.RequestFieldMatchersView{
-							ExactMatch: util.StringToPointer("/api/v2/logs"),
+						Path: []v2.MatcherViewV5{
+							{
+								Matcher: matchers.Exact,
+								Value:   "/api/v2/logs",
+							},
 						},
 					},
-					Response: v2.ResponseDetailsViewV4{
+					Response: v2.ResponseDetailsViewV5{
 						Status: 400,
 						Body:   "{\"error\":\"test error\"}",
 					},
@@ -213,22 +255,33 @@ func Test_GetLogs_FiltersByDateWhenFilterTimeProvided(t *testing.T) {
 	RegisterTestingT(t)
 
 	hoverfly.DeleteSimulation()
-	hoverfly.PutSimulation(v2.SimulationViewV4{
-		v2.DataViewV4{
-			RequestResponsePairs: []v2.RequestMatcherResponsePairViewV4{
-				v2.RequestMatcherResponsePairViewV4{
-					RequestMatcher: v2.RequestMatcherViewV4{
-						Method: &v2.RequestFieldMatchersView{
-							ExactMatch: util.StringToPointer("GET"),
+	hoverfly.PutSimulation(v2.SimulationViewV5{
+		v2.DataViewV5{
+			RequestResponsePairs: []v2.RequestMatcherResponsePairViewV5{
+				{
+					RequestMatcher: v2.RequestMatcherViewV5{
+						Method: []v2.MatcherViewV5{
+							{
+								Matcher: matchers.Exact,
+								Value:   "GET",
+							},
 						},
-						Path: &v2.RequestFieldMatchersView{
-							ExactMatch: util.StringToPointer("/api/v2/logs"),
+						Path: []v2.MatcherViewV5{
+							{
+								Matcher: matchers.Exact,
+								Value:   "/api/v2/logs",
+							},
 						},
-						Query: &v2.RequestFieldMatchersView{
-							ExactMatch: util.StringToPointer("from=684552180"),
+						Query: &v2.QueryMatcherViewV5{
+							"from": []v2.MatcherViewV5{
+								{
+									Matcher: matchers.Exact,
+									Value:   "684552180",
+								},
+							},
 						},
 					},
-					Response: v2.ResponseDetailsViewV4{
+					Response: v2.ResponseDetailsViewV5{
 						Status: 200,
 						Body:   `{"logs":[{"msg": "filtered logs"}]}`,
 					},

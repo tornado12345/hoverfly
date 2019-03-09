@@ -4,20 +4,25 @@ import (
 	"testing"
 
 	"github.com/SpectoLabs/hoverfly/core/handlers/v2"
+	"github.com/SpectoLabs/hoverfly/core/matching/matchers"
 	"github.com/SpectoLabs/hoverfly/core/models"
-	"github.com/SpectoLabs/hoverfly/core/util"
 	. "github.com/onsi/gomega"
 )
 
 func Test_NewRequestFieldMatchersFromView_ReturnsNewStruct(t *testing.T) {
 	RegisterTestingT(t)
 
-	unit := models.NewRequestFieldMatchersFromView(&v2.RequestFieldMatchersView{
-		ExactMatch: util.StringToPointer("exactly"),
+	unit := models.NewRequestFieldMatchersFromView([]v2.MatcherViewV5{
+		{
+			Matcher: matchers.Exact,
+			Value:   "exactly",
+		},
 	})
 
 	Expect(unit).ToNot(BeNil())
-	Expect(*unit.ExactMatch).To(Equal("exactly"))
+	Expect(unit).To(HaveLen(1))
+	Expect(unit[0].Matcher).To(Equal("exact"))
+	Expect(unit[0].Value).To(Equal("exactly"))
 }
 
 func Test_NewRequestFieldMatchersFromView_WillReturnNilIfGivenNil(t *testing.T) {
@@ -32,60 +37,129 @@ func Test_NewRequestFieldMatchers_BuildView(t *testing.T) {
 	RegisterTestingT(t)
 
 	unit := models.RequestFieldMatchers{
-		ExactMatch: util.StringToPointer("exactly"),
+		Matcher: matchers.Exact,
+		Value:   "exactly",
 	}
 
 	view := unit.BuildView()
-	Expect(*view.ExactMatch).To(Equal("exactly"))
+	Expect(view.Matcher).To(Equal("exact"))
+	Expect(view.Value).To(Equal("exactly"))
 }
 
 func Test_NewRequestMatcherResponsePairFromView_BuildsPair(t *testing.T) {
 	RegisterTestingT(t)
 
-	unit := models.NewRequestMatcherResponsePairFromView(&v2.RequestMatcherResponsePairViewV4{
-		RequestMatcher: v2.RequestMatcherViewV4{
-			Path: &v2.RequestFieldMatchersView{
-				ExactMatch: util.StringToPointer("/"),
+	unit := models.NewRequestMatcherResponsePairFromView(&v2.RequestMatcherResponsePairViewV5{
+		RequestMatcher: v2.RequestMatcherViewV5{
+			Path: []v2.MatcherViewV5{
+				{
+					Matcher: matchers.Exact,
+					Value:   "/",
+				},
+			},
+			Headers: map[string][]v2.MatcherViewV5{
+				"Header": {
+					{
+						Matcher: matchers.Exact,
+						Value:   "header value",
+					},
+				},
+			},
+			Query: &v2.QueryMatcherViewV5{
+				"Query": {
+					{
+						Matcher: matchers.Exact,
+						Value:   "query value",
+					},
+				},
 			},
 		},
-		Response: v2.ResponseDetailsViewV4{
+		Response: v2.ResponseDetailsViewV5{
 			Body: "body",
 		},
 	})
 
-	Expect(*unit.RequestMatcher.Path.ExactMatch).To(Equal("/"))
+	Expect(unit.RequestMatcher.Path).To(HaveLen(1))
+	Expect(unit.RequestMatcher.Path[0].Matcher).To(Equal("exact"))
+	Expect(unit.RequestMatcher.Path[0].Value).To(Equal("/"))
+	Expect(unit.RequestMatcher.Headers["Header"][0].Matcher).To(Equal("exact"))
+	Expect(unit.RequestMatcher.Headers["Header"][0].Value).To(Equal("header value"))
+	Expect((*unit.RequestMatcher.Query)["Query"][0].Matcher).To(Equal("exact"))
+	Expect((*unit.RequestMatcher.Query)["Query"][0].Value).To(Equal("query value"))
 	Expect(unit.RequestMatcher.Destination).To(BeNil())
 
 	Expect(unit.Response.Body).To(Equal("body"))
 }
 
-func Test_NewRequestMatcherResponsePairFromView_SortsQuery(t *testing.T) {
+func Test_NewRequestMatcherResponsePairFromView_LeavesHeadersWithMatchersNil(t *testing.T) {
 	RegisterTestingT(t)
 
-	unit := models.NewRequestMatcherResponsePairFromView(&v2.RequestMatcherResponsePairViewV4{
-		RequestMatcher: v2.RequestMatcherViewV4{
-			Query: &v2.RequestFieldMatchersView{
-				ExactMatch: util.StringToPointer("b=b&a=a"),
+	unit := models.NewRequestMatcherResponsePairFromView(&v2.RequestMatcherResponsePairViewV5{
+		RequestMatcher: v2.RequestMatcherViewV5{
+			Path: []v2.MatcherViewV5{
+				{
+					Matcher: matchers.Exact,
+					Value:   "/",
+				},
 			},
 		},
-		Response: v2.ResponseDetailsViewV4{
+		Response: v2.ResponseDetailsViewV5{},
+	})
+
+	Expect(unit.RequestMatcher.Headers).To(BeNil())
+}
+
+func Test_NewRequestMatcherResponsePairFromView_LeavesQueriesWithMatchersNil(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := models.NewRequestMatcherResponsePairFromView(&v2.RequestMatcherResponsePairViewV5{
+		RequestMatcher: v2.RequestMatcherViewV5{
+			Path: []v2.MatcherViewV5{
+				{
+					Matcher: matchers.Exact,
+					Value:   "/",
+				},
+			},
+		},
+		Response: v2.ResponseDetailsViewV5{},
+	})
+
+	Expect(unit.RequestMatcher.Query).To(BeNil())
+}
+
+func Test_NewRequestMatcherResponsePairFromView_SortsDeprecatedQuery(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := models.NewRequestMatcherResponsePairFromView(&v2.RequestMatcherResponsePairViewV5{
+		RequestMatcher: v2.RequestMatcherViewV5{
+			DeprecatedQuery: []v2.MatcherViewV5{
+				{
+					Matcher: matchers.Exact,
+					Value:   "b=b&a=a",
+				},
+			},
+		},
+		Response: v2.ResponseDetailsViewV5{
 			Body: "body",
 		},
 	})
 
-	Expect(*unit.RequestMatcher.Query.ExactMatch).To(Equal("a=a&b=b"))
+	Expect(unit.RequestMatcher.DeprecatedQuery[0].Value).To(Equal("a=a&b=b"))
 }
 
 func Test_NewRequestMatcherResponsePairFromView_StoresTemplated(t *testing.T) {
 	RegisterTestingT(t)
 
-	unit := models.NewRequestMatcherResponsePairFromView(&v2.RequestMatcherResponsePairViewV4{
-		RequestMatcher: v2.RequestMatcherViewV4{
-			Query: &v2.RequestFieldMatchersView{
-				ExactMatch: util.StringToPointer("b=b&a=a"),
+	unit := models.NewRequestMatcherResponsePairFromView(&v2.RequestMatcherResponsePairViewV5{
+		RequestMatcher: v2.RequestMatcherViewV5{
+			Path: []v2.MatcherViewV5{
+				{
+					Matcher: matchers.Exact,
+					Value:   "/",
+				},
 			},
 		},
-		Response: v2.ResponseDetailsViewV4{
+		Response: v2.ResponseDetailsViewV5{
 			Body:      "body",
 			Templated: true,
 		},
@@ -98,23 +172,41 @@ func Test_RequestMatcher_BuildRequestDetailsFromExactMatches_GeneratesARequestDe
 	RegisterTestingT(t)
 
 	unit := models.RequestMatcher{
-		Body: &models.RequestFieldMatchers{
-			ExactMatch: util.StringToPointer("body"),
+		Body: []models.RequestFieldMatchers{
+			{
+				Matcher: matchers.Exact,
+				Value:   "body",
+			},
 		},
-		Destination: &models.RequestFieldMatchers{
-			ExactMatch: util.StringToPointer("destination"),
+		Destination: []models.RequestFieldMatchers{
+			{
+				Matcher: matchers.Exact,
+				Value:   "destination",
+			},
 		},
-		Method: &models.RequestFieldMatchers{
-			ExactMatch: util.StringToPointer("method"),
+		Method: []models.RequestFieldMatchers{
+			{
+				Matcher: matchers.Exact,
+				Value:   "method",
+			},
 		},
-		Path: &models.RequestFieldMatchers{
-			ExactMatch: util.StringToPointer("path"),
+		Path: []models.RequestFieldMatchers{
+			{
+				Matcher: matchers.Exact,
+				Value:   "path",
+			},
 		},
-		Query: &models.RequestFieldMatchers{
-			ExactMatch: util.StringToPointer("query=two"),
+		DeprecatedQuery: []models.RequestFieldMatchers{
+			{
+				Matcher: matchers.Exact,
+				Value:   "query=two",
+			},
 		},
-		Scheme: &models.RequestFieldMatchers{
-			ExactMatch: util.StringToPointer("scheme"),
+		Scheme: []models.RequestFieldMatchers{
+			{
+				Matcher: matchers.Exact,
+				Value:   "scheme",
+			},
 		},
 	}
 
@@ -124,7 +216,7 @@ func Test_RequestMatcher_BuildRequestDetailsFromExactMatches_GeneratesARequestDe
 		Destination: "destination",
 		Method:      "method",
 		Path:        "path",
-		Query:       map[string][]string{"query": []string{"two"}},
+		Query:       map[string][]string{"query": {"two"}},
 		Scheme:      "scheme",
 	}))
 }
@@ -141,20 +233,35 @@ func Test_RequestMatcher_BuildRequestDetailsFromExactMatches_ReturnsNilIfMissing
 	RegisterTestingT(t)
 
 	unit := models.RequestMatcher{
-		Destination: &models.RequestFieldMatchers{
-			ExactMatch: util.StringToPointer("destination"),
+		Destination: []models.RequestFieldMatchers{
+			{
+				Matcher: matchers.Exact,
+				Value:   "destination",
+			},
 		},
-		Method: &models.RequestFieldMatchers{
-			ExactMatch: util.StringToPointer("method"),
+		Method: []models.RequestFieldMatchers{
+			{
+				Matcher: matchers.Exact,
+				Value:   "method",
+			},
 		},
-		Path: &models.RequestFieldMatchers{
-			ExactMatch: util.StringToPointer("path"),
+		Path: []models.RequestFieldMatchers{
+			{
+				Matcher: matchers.Exact,
+				Value:   "path",
+			},
 		},
-		Query: &models.RequestFieldMatchers{
-			ExactMatch: util.StringToPointer("query"),
+		DeprecatedQuery: []models.RequestFieldMatchers{
+			{
+				Matcher: matchers.Exact,
+				Value:   "query",
+			},
 		},
-		Scheme: &models.RequestFieldMatchers{
-			ExactMatch: util.StringToPointer("scheme"),
+		Scheme: []models.RequestFieldMatchers{
+			{
+				Matcher: matchers.Exact,
+				Value:   "query",
+			},
 		},
 	}
 

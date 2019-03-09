@@ -6,13 +6,13 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"strings"
 
 	log "github.com/Sirupsen/logrus"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/SpectoLabs/goproxy"
 	"github.com/SpectoLabs/hoverfly/core/handlers/v2"
-	"github.com/SpectoLabs/hoverfly/core/matching"
 	"github.com/SpectoLabs/hoverfly/core/models"
 )
 
@@ -40,17 +40,10 @@ type Mode interface {
 	View() v2.ModeView
 }
 
-type Hoverfly interface {
-	GetResponse(models.RequestDetails) (*models.ResponseDetails, *matching.MatchingError)
-	ApplyMiddleware(models.RequestResponsePair) (models.RequestResponsePair, error)
-	DoRequest(*http.Request) (*http.Response, error)
-	IsMiddlewareSet() bool
-	Save(*models.RequestDetails, *models.ResponseDetails)
-}
-
 type ModeArguments struct {
 	Headers          []string
 	MatchingStrategy *string
+	Stateful         bool
 }
 
 // ReconstructRequest replaces original request with details provided in Constructor Payload.RequestMatcher
@@ -105,10 +98,8 @@ func ReconstructResponse(request *http.Request, pair models.RequestResponsePair)
 	response := &http.Response{}
 	response.Request = request
 
-	// adding body, length, status code
-	buf := bytes.NewBufferString(pair.Response.Body)
-	response.ContentLength = int64(buf.Len())
-	response.Body = ioutil.NopCloser(buf)
+	response.ContentLength = int64(len(pair.Response.Body))
+	response.Body = ioutil.NopCloser(strings.NewReader(pair.Response.Body))
 	response.StatusCode = pair.Response.Status
 
 	headers := make(http.Header)
@@ -118,6 +109,10 @@ func ReconstructResponse(request *http.Request, pair models.RequestResponsePair)
 	}
 
 	response.Header = headers
+
+	if response.ContentLength > 0 && response.Header.Get("Content-Length") == "" && response.Header.Get("Transfer-Encoding") == "" {
+		response.Header.Set("Content-Length", fmt.Sprintf("%v", response.ContentLength))
+	}
 
 	return response
 }

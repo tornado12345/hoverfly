@@ -3,6 +3,7 @@ package hoverfly
 import (
 	"errors"
 	"fmt"
+	"github.com/SpectoLabs/hoverfly/core/delay"
 	"regexp"
 
 	"strings"
@@ -10,10 +11,12 @@ import (
 	log "github.com/Sirupsen/logrus"
 	"github.com/SpectoLabs/hoverfly/core/handlers/v1"
 	"github.com/SpectoLabs/hoverfly/core/handlers/v2"
+	"github.com/SpectoLabs/hoverfly/core/matching/matchers"
 	"github.com/SpectoLabs/hoverfly/core/metrics"
 	"github.com/SpectoLabs/hoverfly/core/middleware"
 	"github.com/SpectoLabs/hoverfly/core/models"
 	"github.com/SpectoLabs/hoverfly/core/modes"
+	"github.com/SpectoLabs/hoverfly/core/state"
 	"github.com/SpectoLabs/hoverfly/core/util"
 )
 
@@ -65,7 +68,7 @@ func (this *Hoverfly) SetModeWithArguments(modeView v2.ModeView) error {
 	}
 
 	if this.Cfg.Webserver && modeView.Mode == modes.Capture {
-		log.Error("Can't change mode to when configured as a webserver")
+		log.Error("Cannot change the mode of Hoverfly to capture when running as a webserver")
 		return fmt.Errorf("Cannot change the mode of Hoverfly to capture when running as a webserver")
 	}
 
@@ -100,6 +103,7 @@ func (this *Hoverfly) SetModeWithArguments(modeView v2.ModeView) error {
 	modeArguments := modes.ModeArguments{
 		Headers:          modeView.Arguments.Headers,
 		MatchingStrategy: matchingStrategy,
+		Stateful:         modeView.Arguments.Stateful,
 	}
 
 	this.modeMap[this.Cfg.GetMode()].SetArguments(modeArguments)
@@ -150,12 +154,12 @@ func (hf *Hoverfly) SetMiddleware(binary, script, remote string) error {
 			Scheme:      "",
 			Query:       map[string][]string{},
 			Body:        "",
-			Headers:     map[string][]string{"test_header": []string{"true"}},
+			Headers:     map[string][]string{"test_header": {"true"}},
 		},
 		Response: models.ResponseDetails{
 			Status:  200,
 			Body:    "ok",
-			Headers: map[string][]string{"test_header": []string{"true"}},
+			Headers: map[string][]string{"test_header": {"true"}},
 		},
 	}
 
@@ -199,16 +203,49 @@ func (hf *Hoverfly) SetResponseDelays(payloadView v1.ResponseDelayPayloadView) e
 	return nil
 }
 
+func (hf *Hoverfly) SetResponseDelaysLogNormal(payloadView v1.ResponseDelayLogNormalPayloadView) error {
+	err := models.ValidateResponseDelayLogNormalPayload(payloadView)
+	if err != nil {
+		return err
+	}
+
+	var responseDelaysLogNormal models.ResponseDelayLogNormalList
+
+	for _, responseDelayView := range payloadView.Data {
+		responseDelaysLogNormal = append(responseDelaysLogNormal, models.ResponseDelayLogNormal{
+			UrlPattern: responseDelayView.UrlPattern,
+			HttpMethod: responseDelayView.HttpMethod,
+			Min:        responseDelayView.Min,
+			Max:        responseDelayView.Max,
+			Mean:       responseDelayView.Mean,
+			Median:     responseDelayView.Median,
+			DelayGenerator: delay.NewLogNormalGenerator(
+				responseDelayView.Min,
+				responseDelayView.Max,
+				responseDelayView.Mean,
+				responseDelayView.Median,
+			),
+		})
+	}
+
+	hf.Simulation.ResponseDelaysLogNormal = &responseDelaysLogNormal
+	return nil
+}
+
 func (hf *Hoverfly) DeleteResponseDelays() {
 	hf.Simulation.ResponseDelays = &models.ResponseDelayList{}
+}
+
+func (hf *Hoverfly) DeleteResponseDelaysLogNormal() {
+	hf.Simulation.ResponseDelaysLogNormal = &models.ResponseDelayLogNormalList{}
 }
 
 func (hf Hoverfly) GetStats() metrics.Stats {
 	return hf.Counter.Flush()
 }
 
-func (hf Hoverfly) GetSimulation() (v2.SimulationViewV4, error) {
-	pairViews := make([]v2.RequestMatcherResponsePairViewV4, 0)
+func (hf Hoverfly) GetSimulation() (v2.SimulationViewV5, error) {
+	pairViews := make([]v2.RequestMatcherResponsePairViewV5, 0)
 
 	for _, v := range hf.Simulation.GetMatchingPairs() {
 		pairViews = append(pairViews, v.BuildView())
@@ -216,25 +253,26 @@ func (hf Hoverfly) GetSimulation() (v2.SimulationViewV4, error) {
 
 	return v2.BuildSimulationView(pairViews,
 		hf.Simulation.ResponseDelays.ConvertToResponseDelayPayloadView(),
+		hf.Simulation.ResponseDelaysLogNormal.ConvertToResponseDelayLogNormalPayloadView(),
 		hf.version), nil
 }
 
-func (hf Hoverfly) GetFilteredSimulation(urlPattern string) (v2.SimulationViewV4, error) {
-	pairViews := make([]v2.RequestMatcherResponsePairViewV4, 0)
+func (hf Hoverfly) GetFilteredSimulation(urlPattern string) (v2.SimulationViewV5, error) {
+	pairViews := make([]v2.RequestMatcherResponsePairViewV5, 0)
 	regexPattern, err := regexp.Compile(urlPattern)
 
 	if err != nil {
-		return v2.SimulationViewV4{}, err
+		return v2.SimulationViewV5{}, err
 	}
 
 	for _, v := range hf.Simulation.GetMatchingPairs() {
 
 		var urlStringToMatch string
-		if v.RequestMatcher.Destination != nil {
-			urlStringToMatch += util.PointerToString(v.RequestMatcher.Destination.ExactMatch)
+		if v.RequestMatcher.Destination != nil && len(v.RequestMatcher.Destination) != 0 && v.RequestMatcher.Destination[0].Matcher == matchers.Exact {
+			urlStringToMatch += v.RequestMatcher.Destination[0].Value.(string)
 		}
-		if v.RequestMatcher.Path != nil {
-			urlStringToMatch += util.PointerToString(v.RequestMatcher.Path.ExactMatch)
+		if v.RequestMatcher.Path != nil && len(v.RequestMatcher.Path) != 0 && v.RequestMatcher.Path[0].Matcher == matchers.Exact {
+			urlStringToMatch += v.RequestMatcher.Path[0].Value.(string)
 		}
 
 		if regexPattern.MatchString(urlStringToMatch) {
@@ -244,26 +282,23 @@ func (hf Hoverfly) GetFilteredSimulation(urlPattern string) (v2.SimulationViewV4
 
 	return v2.BuildSimulationView(pairViews,
 		hf.Simulation.ResponseDelays.ConvertToResponseDelayPayloadView(),
+		hf.Simulation.ResponseDelaysLogNormal.ConvertToResponseDelayLogNormalPayloadView(),
 		hf.version), nil
 }
 
-func (this *Hoverfly) PutSimulation(simulationView v2.SimulationViewV4) error {
-	err := this.ImportRequestResponsePairViews(simulationView.DataViewV4.RequestResponsePairs)
-	if err != nil {
-		return err
-	}
+func (this *Hoverfly) PutSimulation(simulationView v2.SimulationViewV5) v2.SimulationImportResult {
+	result := this.importRequestResponsePairViews(simulationView.DataViewV5.RequestResponsePairs)
 
-	err = this.SetResponseDelays(v1.ResponseDelayPayloadView{Data: simulationView.GlobalActions.Delays})
-	if err != nil {
-		return err
-	}
+	result.AddError(this.SetResponseDelays(v1.ResponseDelayPayloadView{Data: simulationView.GlobalActions.Delays}))
+	result.AddError(this.SetResponseDelaysLogNormal(v1.ResponseDelayLogNormalPayloadView{Data: simulationView.GlobalActions.DelaysLogNormal}))
 
-	return nil
+	return result
 }
 
 func (this *Hoverfly) DeleteSimulation() {
 	this.Simulation.DeleteMatchingPairs()
 	this.DeleteResponseDelays()
+	this.DeleteResponseDelaysLogNormal()
 	this.FlushCache()
 }
 
@@ -285,21 +320,19 @@ func (this Hoverfly) IsMiddlewareSet() bool {
 }
 
 func (this *Hoverfly) GetState() map[string]string {
-	return this.state
+	return this.state.State
 }
 
 func (this *Hoverfly) SetState(state map[string]string) {
-	this.state = state
+	this.state.SetState(state)
 }
 
 func (this *Hoverfly) PatchState(toPatch map[string]string) {
-	for k, v := range toPatch {
-		this.state[k] = v
-	}
+	this.state.PatchState(toPatch)
 }
 
 func (this *Hoverfly) ClearState() {
-	this.state = make(map[string]string)
+	this.state = state.NewState()
 }
 
 func (this *Hoverfly) GetDiff() map[v2.SimpleRequestDefinitionView][]v2.DiffReport {
@@ -315,4 +348,19 @@ func (this *Hoverfly) AddDiff(requestView v2.SimpleRequestDefinitionView, diffRe
 		diffs := this.responsesDiff[requestView]
 		this.responsesDiff[requestView] = append(diffs, diffReport)
 	}
+}
+
+func (this *Hoverfly) GetPACFile() []byte {
+	return this.Cfg.PACFile
+}
+
+func (this *Hoverfly) SetPACFile(pacFile []byte) {
+	if len(pacFile) == 0 {
+		pacFile = nil
+	}
+	this.Cfg.PACFile = pacFile
+}
+
+func (this *Hoverfly) DeletePACFile() {
+	this.Cfg.PACFile = nil
 }

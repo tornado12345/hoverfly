@@ -15,7 +15,7 @@ import (
 type HoverflyCapture interface {
 	ApplyMiddleware(models.RequestResponsePair) (models.RequestResponsePair, error)
 	DoRequest(*http.Request) (*http.Response, error)
-	Save(*models.RequestDetails, *models.ResponseDetails, []string) error
+	Save(*models.RequestDetails, *models.ResponseDetails, []string, bool) error
 }
 
 type CaptureMode struct {
@@ -29,6 +29,7 @@ func (this *CaptureMode) View() v2.ModeView {
 		Arguments: v2.ModeArgumentsView{
 			Headers:          this.Arguments.Headers,
 			MatchingStrategy: this.Arguments.MatchingStrategy,
+			Stateful:         this.Arguments.Stateful,
 		},
 	}
 }
@@ -54,7 +55,7 @@ func (this CaptureMode) Process(request *http.Request, details models.RequestDet
 
 	modifiedRequest, err := ReconstructRequestForPassThrough(pair)
 	if err != nil {
-		return ReturnErrorAndLog(request, err, &pair, "There was an error when applying middleware to http request", Capture)
+		return ReturnErrorAndLog(request, err, &pair, "There was an error when preparing request for pass through", Capture)
 	}
 
 	response, err := this.Hoverfly.DoRequest(modifiedRequest)
@@ -75,7 +76,7 @@ func (this CaptureMode) Process(request *http.Request, details models.RequestDet
 	}
 
 	// saving response body with request/response meta to cache
-	err = this.Hoverfly.Save(&pair.Request, responseObj, this.Arguments.Headers)
+	err = this.Hoverfly.Save(&pair.Request, responseObj, this.Arguments.Headers, this.Arguments.Stateful)
 	if err != nil {
 		return ReturnErrorAndLog(request, err, &pair, "There was an error when saving request and response", Capture)
 	}

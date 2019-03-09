@@ -12,20 +12,61 @@ import (
 type Flags []string
 
 type Config struct {
-	DefaultTarget string            `yaml:"default"`
+	DefaultTarget string            `mapstructure:"default" yaml:"default"`	// viper uses mapstructure to unmarshall
 	Targets       map[string]Target `yaml:"targets"`
 }
 
 func GetConfig() *Config {
 	err := viper.ReadInConfig()
 	if err != nil {
-		log.Debug(err.Error())
+		log.Debug("Error reading config")
+		if err.Error() == `Unsupported Config Type ""` {
+			log.Debug("viper not properly configured, if this is the first time executing hoverctl, please try the command again")
+		} else {
+			log.Debug(err.Error())
+		}
 	}
 
-	return &Config{
-		DefaultTarget: viper.GetString("default"),
-		Targets:       getTargetsFromConfig(viper.GetStringMap("targets")),
+	return parseConfig()
+}
+
+func parseConfig() *Config {
+	config := &Config{}
+	err := viper.Unmarshal(config)
+	if err != nil {
+		log.Debug("Error parsing config")
+		log.Debug(err.Error())
 	}
+	if config.DefaultTarget == "" {
+		config.DefaultTarget = viper.GetString("default")
+	}
+	if config.Targets == nil {
+		config.Targets = map[string]Target{}
+	}
+	defaultTarget := NewDefaultTarget()
+
+	// Initialize local target
+	if config.Targets["local"] == (Target{}) {
+		config.Targets["local"] = *defaultTarget
+	}
+
+	// Assume default value for any required config
+	for key, target := range config.Targets {
+		if target.Host == "" {
+			target.Host = defaultTarget.Host
+		}
+
+		if target.AdminPort == 0 {
+			target.AdminPort = defaultTarget.AdminPort
+		}
+
+		if target.ProxyPort == 0 {
+			target.ProxyPort = defaultTarget.ProxyPort
+		}
+		config.Targets[key] = target
+	}
+
+	return config
 }
 
 func (this *Config) GetTarget(targetName string) *Target {
@@ -70,9 +111,9 @@ func (c *Config) WriteToFile(hoverflyDirectory HoverflyDirectory) error {
 		return err
 	}
 
-	filepath := filepath.Join(hoverflyDirectory.Path, "config.yaml")
+	configPath := filepath.Join(hoverflyDirectory.Path, "config.yaml")
 
-	err = ioutil.WriteFile(filepath, data, 0644)
+	err = ioutil.WriteFile(configPath, data, 0644)
 
 	if err != nil {
 		log.Debug(err.Error())

@@ -25,10 +25,12 @@ type Configuration struct {
 	TLSVerification bool
 
 	UpstreamProxy string
+	PACFile       []byte
 
 	Verbose bool
 
 	DisableCache bool
+	CacheSize int
 
 	SecretKey          []byte
 	JWTExpirationDelta int
@@ -39,6 +41,11 @@ type Configuration struct {
 	HttpsOnly bool
 
 	PlainHttpTunneling bool
+
+	ClientAuthenticationDestination string
+	ClientAuthenticationClientCert  string
+	ClientAuthenticationClientKey   string
+	ClientAuthenticationCACert      string
 
 	ProxyControlWG sync.WaitGroup
 
@@ -142,7 +149,7 @@ func InitSettings() *Configuration {
 	if os.Getenv(HoverflySecretEV) != "" {
 		appConfig.SecretKey = []byte(os.Getenv(HoverflySecretEV))
 	} else {
-		appConfig.SecretKey = GetRandomName(10)
+		appConfig.SecretKey = getRandomName(10)
 	}
 
 	if os.Getenv(HoverflyTokenExpirationEV) != "" {
@@ -181,6 +188,8 @@ func InitSettings() *Configuration {
 	appConfig.Mode = "simulate"
 
 	appConfig.ProxyAuthorizationHeader = "Proxy-Authorization"
+
+	appConfig.CacheSize = 1000
 
 	return &appConfig
 }

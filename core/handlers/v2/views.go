@@ -26,6 +26,7 @@ type ModeView struct {
 type ModeArgumentsView struct {
 	Headers          []string `json:"headersWhitelist,omitempty"`
 	MatchingStrategy *string  `json:"matchingStrategy,omitempty"`
+	Stateful         bool     `json:"stateful,omitempty"`
 }
 
 type IsWebServerView struct {
@@ -60,14 +61,14 @@ type CacheView struct {
 
 type CachedResponseView struct {
 	Key          string                            `json:"key"`
-	MatchingPair *RequestMatcherResponsePairViewV4 `json:"matchingPair,omitempty"`
+	MatchingPair *RequestMatcherResponsePairViewV5 `json:"matchingPair,omitempty"`
 	HeaderMatch  bool                              `json:"headerMatch"`
 	ClosestMiss  *ClosestMissView                  `json:"closestMiss"`
 }
 
 type ClosestMissView struct {
-	Response       ResponseDetailsViewV4 `json:"response"`
-	RequestMatcher RequestMatcherViewV4  `json:"requestMatcher"`
+	Response       ResponseDetailsViewV5 `json:"response"`
+	RequestMatcher RequestMatcherViewV5  `json:"requestMatcher"`
 	MissedFields   []string              `json:"missedFields"`
 }
 
@@ -87,7 +88,7 @@ type JournalEntryView struct {
 }
 
 type JournalEntryFilterView struct {
-	Request *RequestMatcherViewV2 `json:"request"`
+	Request *RequestMatcherViewV5 `json:"request"`
 }
 
 type StateView struct {

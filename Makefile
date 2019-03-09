@@ -14,10 +14,12 @@ hoverctl-build: hoverctl-test
 	cd hoverctl && \
 	go build -ldflags "-X main.hoverctlVersion=$(GIT_TAG_NAME)" -o ../target/hoverctl
 
+CORE_FUNCTIONAL_TESTS = $(shell cd functional-tests/core && go list ./...)
+
 hoverfly-functional-test: hoverfly-build
 	cp target/hoverfly functional-tests/core/bin/hoverfly
 	cd functional-tests/core && \
-	go test -v $(go list ./... | grep -v -E 'vendor')
+	go test -v $(CORE_FUNCTIONAL_TESTS)
 
 hoverctl-functional-test:
 	cp target/hoverfly functional-tests/hoverctl/bin/hoverfly
@@ -40,6 +42,10 @@ build-ui:
 	statik -src=../hoverfly-ui
 	rm -rf $(GIT_TAG_NAME).zip
 	rm -rf hoverfly-ui
+
+benchmark:
+	cd core && \
+	go test -bench=BenchmarkProcessRequest -run=XXX -cpuprofile profile_cpu.out -memprofile profile_mem.out --benchtime=20s
 
 fmt:
 	go fmt $$(go list ./... | grep -v -E 'vendor')

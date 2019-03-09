@@ -7,8 +7,7 @@ import (
 
 	"io/ioutil"
 
-	"fmt"
-
+	"github.com/SpectoLabs/hoverfly/core/errors"
 	"github.com/SpectoLabs/hoverfly/core/models"
 )
 
@@ -44,8 +43,6 @@ func ConvertToNewMiddleware(middleware string) (*Middleware, error) {
 		}
 		return newMiddleware, nil
 	}
-
-	return nil, nil
 }
 
 func (this *Middleware) SetScript(scriptContent string) error {
@@ -107,7 +104,7 @@ func (this *Middleware) SetRemote(remoteUrl string) error {
 
 func (this *Middleware) Execute(pair models.RequestResponsePair) (models.RequestResponsePair, error) {
 	if !this.IsSet() {
-		return pair, fmt.Errorf("Cannot execute middleware as middleware has not been correctly set")
+		return pair, errors.MiddlewareNotSetError()
 	}
 
 	if this.Remote == "" {

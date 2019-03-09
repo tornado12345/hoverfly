@@ -60,26 +60,27 @@ const inmemoryBackend = "memory"
 var (
 	version      = flag.Bool("version", false, "Get the version of hoverfly")
 	verbose      = flag.Bool("v", false, "Should every proxy request be logged to stdout")
+	logLevelFlag = flag.String("log-level", "info", "Set log level (panic, fatal, error, warn, info or debug)")
 	capture      = flag.Bool("capture", false, "Start Hoverfly in capture mode - transparently intercepts and saves requests/response")
 	synthesize   = flag.Bool("synthesize", false, "Start Hoverfly in synthesize mode (middleware is required)")
 	modify       = flag.Bool("modify", false, "Start Hoverfly in modify mode - applies middleware (required) to both outgoing and incoming HTTP traffic")
 	spy          = flag.Bool("spy", false, "Start Hoverfly in spy mode, similar to simulate but calls real server when cache miss")
 	diff         = flag.Bool("diff", false, "Start Hoverfly in diff mode - calls real server and compares the actual response with the expected simulation config if present")
-	middleware   = flag.String("middleware", "", "Should proxy use middleware")
+	middleware   = flag.String("middleware", "", "Set middleware by passing the name of the binary and the path of the middleware script separated by space. (i.e. '-middleware \"python script.py\"')")
 	proxyPort    = flag.String("pp", "", "Proxy port - run proxy on another port (i.e. '-pp 9999' to run proxy on port 9999)")
 	adminPort    = flag.String("ap", "", "Admin port - run admin interface on another port (i.e. '-ap 1234' to run admin UI on port 1234)")
 	listenOnHost = flag.String("listen-on-host", "", "Specify which network interface to bind to, eg. 0.0.0.0 will bind to all interfaces. By default hoverfly will only bind ports to loopback interface")
-	metrics      = flag.Bool("metrics", false, "Supply -metrics flag to enable metrics logging to stdout")
-	dev          = flag.Bool("dev", false, "Enable CORS headers to allow frontend development")
-	destination  = flag.String("destination", ".", "Destination URI to catch")
+	metrics      = flag.Bool("metrics", false, "Enable metrics logging to stdout")
+	dev          = flag.Bool("dev", false, "Enable CORS headers to allow Hoverfly Admin UI development")
+	destination  = flag.String("destination", ".", "Control which URLs Hoverfly should intercept and process, it can be string or regex")
 	webserver    = flag.Bool("webserver", false, "Start Hoverfly in webserver mode (simulate mode)")
 
 	addNew          = flag.Bool("add", false, "Add new user '-add -username hfadmin -password hfpass'")
 	addUser         = flag.String("username", "", "Username for new user")
 	addPassword     = flag.String("password", "", "Password for new user")
 	addPasswordHash = flag.String("password-hash", "", "Password hash for new user instead of password")
-	isAdmin         = flag.Bool("admin", true, "Supply '-admin false' to make this non admin user (defaults to 'true') ")
-	authEnabled     = flag.Bool("auth", false, "Enable authentication, currently it is disabled by default")
+	isAdmin         = flag.Bool("admin", true, "Supply '-admin=false' to make this non admin user")
+	authEnabled     = flag.Bool("auth", false, "Enable authentication")
 
 	proxyAuthorizationHeader = flag.String("proxy-auth", "proxy-auth", "Switch the Proxy-Authorization header from proxy-auth `Proxy-Authorization` to header-auth `X-HOVERFLY-AUTHORIZATION`. Switching to header-auth will auto enable -https-only")
 
@@ -89,20 +90,26 @@ var (
 	cert       = flag.String("cert", "", "CA certificate used to sign MITM certificates")
 	key        = flag.String("key", "", "Private key of the CA used to sign MITM certificates")
 
-	tlsVerification    = flag.Bool("tls-verification", true, "Turn on/off tls verification for outgoing requests (will not try to verify certificates) - defaults to true")
-	plainHttpTunneling = flag.Bool("plain-http-tunneling", false, "Use plain http tunneling to host with non-443 port - defaults to false")
+	tlsVerification    = flag.Bool("tls-verification", true, "Turn on/off tls verification for outgoing requests (will not try to verify certificates)")
+	plainHttpTunneling = flag.Bool("plain-http-tunneling", false, "Use plain http tunneling to host with non-443 port")
 
 	upstreamProxy = flag.String("upstream-proxy", "", "Specify an upstream proxy for hoverfly to route traffic through")
 	httpsOnly     = flag.Bool("https-only", false, "Allow only secure secure requests to be proxied by hoverfly")
 
 	databasePath = flag.String("db-path", "", "Database location - supply it to provide specific database location (will be created there if it doesn't exist)")
 	database     = flag.String("db", inmemoryBackend, "Storage to use - 'boltdb' or 'memory' which will not write anything to disk")
-	disableCache = flag.Bool("disable-cache", false, "Disable the cache that sits in front of matching")
+	disableCache = flag.Bool("disable-cache", false, "Disable request/response cache (the cache that sits in front of matching)")
 
-	logsFormat = flag.String("logs", "plaintext", "Specify format for logs, options are \"plaintext\" and \"json\" (default \"plaintext\")")
-	logsSize   = flag.Int("logs-size", 1000, "Set the amount of logs to be stored in memory (default \"1000\")")
+	logsFormat = flag.String("logs", "plaintext", "Specify format for logs, options are \"plaintext\" and \"json\"")
+	logsSize   = flag.Int("logs-size", 1000, "Set the amount of logs to be stored in memory")
 
-	journalSize = flag.Int("journal-size", 1000, "Set the size of request/response journal (default \"1000\")")
+	journalSize = flag.Int("journal-size", 1000, "Set the size of request/response journal")
+	cacheSize 	= flag.Int("cache-size", 1000, "Set the size of request/response cache")
+
+	clientAuthenticationDestination = flag.String("client-authentication-destination", "", "Regular expression of destination with client authentication")
+	clientAuthenticationClientCert  = flag.String("client-authentication-client-cert", "", "Path to the client certification file used for authentication")
+	clientAuthenticationClientKey   = flag.String("client-authentication-client-key", "", "Path to the client key file used for authentication")
+	clientAuthenticationCACert      = flag.String("client-authentication-ca-cert", "", "Path to the ca cert file used for authentication")
 )
 
 var CA_CERT = []byte(`-----BEGIN CERTIFICATE-----
@@ -161,7 +168,7 @@ func init() {
 	if err != nil {
 		log.WithFields(log.Fields{
 			"error": err.Error(),
-		}).Fatal("Failed to load certifiate and key pair")
+		}).Fatal("Failed to load certificate and key pair")
 	}
 	goproxy.GoproxyCa = tlsc
 }
@@ -169,7 +176,6 @@ func init() {
 func main() {
 	hoverfly := hv.NewHoverfly()
 
-	// log.SetFormatter(&log.JSONFormatter{})
 	flag.Var(&importFlags, "import", "Import from file or from URL (i.e. '-import my_service.json' or '-import http://mypage.com/service_x.json'")
 	flag.Var(&destinationFlags, "dest", "Specify which hosts to process (i.e. '-dest fooservice.org -dest barservice.org -dest catservice.org') - other hosts will be ignored will passthrough'")
 	flag.Parse()
@@ -188,11 +194,33 @@ func main() {
 		os.Exit(0)
 	}
 
+	if *journalSize < 0 {
+		*journalSize = 0
+	}
+
+	if *logsSize < 0 {
+		*logsSize = 0
+	}
+
+	if *cacheSize <= 0 {
+		log.WithFields(log.Fields{
+			"cache-size": *logsSize,
+		}).Fatal("Cache size must be a positive number, alternatively use the disable-cache flag")
+	}
+
 	hoverfly.StoreLogsHook.LogsLimit = *logsSize
 	hoverfly.Journal.EntryLimit = *journalSize
 
 	// getting settings
 	cfg := hv.InitSettings()
+
+	logLevel, err := log.ParseLevel(*logLevelFlag)
+	if err != nil {
+		log.WithFields(log.Fields{
+			"log-level": *logLevelFlag,
+		}).Fatal("Unknown log-level value")
+	}
+	log.SetLevel(logLevel)
 
 	if *verbose {
 		// Only log the warning severity or above.
@@ -219,7 +247,7 @@ func main() {
 		if err != nil {
 			log.WithFields(log.Fields{
 				"error": err.Error(),
-			}).Fatal("Failed to load certifiate and key pair")
+			}).Fatal("Failed to load certificate and key pair")
 		}
 
 		goproxy.GoproxyCa = tlsc
@@ -266,6 +294,11 @@ func main() {
 	cfg.HttpsOnly = *httpsOnly
 	cfg.PlainHttpTunneling = *plainHttpTunneling
 
+	cfg.ClientAuthenticationDestination = *clientAuthenticationDestination
+	cfg.ClientAuthenticationClientCert = *clientAuthenticationClientCert
+	cfg.ClientAuthenticationClientKey = *clientAuthenticationClientKey
+	cfg.ClientAuthenticationCACert = *clientAuthenticationCACert
+
 	// overriding default middleware setting
 	newMiddleware, err := mw.ConvertToNewMiddleware(*middleware)
 	if err != nil {
@@ -298,7 +331,7 @@ func main() {
 		cfg.Destination = *destination
 	}
 
-	var requestCache cache.Cache
+	var requestCache cache.FastCache
 	var tokenCache cache.Cache
 	var userCache cache.Cache
 
@@ -309,13 +342,11 @@ func main() {
 	if *database == boltBackend {
 		db := cache.GetDB(cfg.DatabasePath)
 		defer db.Close()
-		requestCache = cache.NewBoltDBCache(db, []byte("requestsBucket"))
 		tokenCache = cache.NewBoltDBCache(db, []byte(backends.TokenBucketName))
 		userCache = cache.NewBoltDBCache(db, []byte(backends.UserBucketName))
 
 		log.Info("Using boltdb backend")
 	} else if *database == inmemoryBackend {
-		requestCache = cache.NewInMemoryCache()
 		tokenCache = cache.NewInMemoryCache()
 		userCache = cache.NewInMemoryCache()
 
@@ -323,13 +354,21 @@ func main() {
 	} else {
 		log.WithFields(log.Fields{
 			"database": *database,
-		}).Fatalf("Unknown database type")
+		}).Fatal("Unknown database type")
 	}
 	cfg.DisableCache = *disableCache
+	cfg.CacheSize = *cacheSize
 	if cfg.DisableCache {
-		requestCache = nil
-
 		log.Info("Request cache has been disabled")
+	} else {
+		// Request cache is always in-memory
+		requestCache, err = cache.NewLRUCache(cfg.CacheSize)
+		if err != nil {
+			log.WithFields(log.Fields{
+				"error":    err.Error(),
+				"cache-size": cfg.CacheSize,
+			}).Fatal("Failed to create cache")
+		}
 	}
 
 	if *proxyAuthorizationHeader == "header-auth" {

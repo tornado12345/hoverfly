@@ -1,13 +1,7 @@
 package hoverfly
 
 import (
-	"crypto/tls"
 	"fmt"
-	"net"
-	"net/http"
-	"net/url"
-	"sync"
-
 	log "github.com/Sirupsen/logrus"
 	"github.com/SpectoLabs/goproxy"
 	"github.com/SpectoLabs/hoverfly/core/authentication/backends"
@@ -18,17 +12,12 @@ import (
 	"github.com/SpectoLabs/hoverfly/core/metrics"
 	"github.com/SpectoLabs/hoverfly/core/models"
 	"github.com/SpectoLabs/hoverfly/core/modes"
+	"github.com/SpectoLabs/hoverfly/core/state"
 	"github.com/SpectoLabs/hoverfly/core/templating"
+	"net"
+	"net/http"
+	"sync"
 )
-
-// orPanic - wrapper for logging errors
-func orPanic(err error) {
-	if err != nil {
-		log.WithFields(log.Fields{
-			"error": err.Error(),
-		}).Panic("Got error.")
-	}
-}
 
 // Hoverfly provides access to hoverfly - updating/starting/stopping proxy, http client and configuration, cache access
 type Hoverfly struct {
@@ -46,7 +35,7 @@ type Hoverfly struct {
 
 	modeMap map[string]modes.Mode
 
-	state map[string]string
+	state *state.State
 
 	Simulation    *models.Simulation
 	StoreLogsHook *StoreLogsHook
@@ -67,12 +56,12 @@ func NewHoverfly() *Hoverfly {
 		StoreLogsHook:  NewStoreLogsHook(),
 		Journal:        journal.NewJournal(),
 		Cfg:            InitSettings(),
-		state:          make(map[string]string),
+		state:          state.NewState(),
 		templator:      templating.NewTemplator(),
 		responsesDiff:  make(map[v2.SimpleRequestDefinitionView][]v2.DiffReport),
 	}
 
-	hoverfly.version = "v0.16.0"
+	hoverfly.version = "v1.0.0-rc.2"
 
 	log.AddHook(hoverfly.StoreLogsHook)
 
@@ -95,14 +84,19 @@ func NewHoverfly() *Hoverfly {
 func NewHoverflyWithConfiguration(cfg *Configuration) *Hoverfly {
 	hoverfly := NewHoverfly()
 
-	var requestCache cache.Cache
+	var requestCache cache.FastCache
 	if !cfg.DisableCache {
-		requestCache = cache.NewInMemoryCache()
+		if cfg.CacheSize > 0 {
+			requestCache, _ = cache.NewLRUCache(cfg.CacheSize)
+		} else {
+			// Backward compatibility, always set default cache if cache size is not configured
+			requestCache = cache.NewDefaultLRUCache()
+		}
 	}
 
 	hoverfly.CacheMatcher = matching.CacheMatcher{
-		RequestCache: requestCache,
 		Webserver:    cfg.Webserver,
+		RequestCache: requestCache,
 	}
 
 	hoverfly.Cfg = cfg
@@ -112,7 +106,7 @@ func NewHoverflyWithConfiguration(cfg *Configuration) *Hoverfly {
 }
 
 // GetNewHoverfly returns a configured ProxyHttpServer and DBClient
-func GetNewHoverfly(cfg *Configuration, requestCache cache.Cache, authentication backends.Authentication) *Hoverfly {
+func GetNewHoverfly(cfg *Configuration, requestCache cache.FastCache, authentication backends.Authentication) *Hoverfly {
 	hoverfly := NewHoverfly()
 
 	if cfg.DisableCache {
@@ -129,30 +123,6 @@ func GetNewHoverfly(cfg *Configuration, requestCache cache.Cache, authentication
 	hoverfly.Cfg = cfg
 
 	return hoverfly
-}
-
-func GetDefaultHoverflyHTTPClient(tlsVerification bool, upstreamProxy string) *http.Client {
-
-	var proxyURL func(*http.Request) (*url.URL, error)
-	if upstreamProxy == "" {
-		proxyURL = http.ProxyURL(nil)
-	} else {
-		u, err := url.Parse(upstreamProxy)
-		if err != nil {
-			log.Fatalf("Could not parse upstream proxy: ", err.Error())
-		}
-		proxyURL = http.ProxyURL(u)
-	}
-
-	return &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		return http.ErrUseLastResponse
-	}, Transport: &http.Transport{
-		Proxy: proxyURL,
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: !tlsVerification,
-			Renegotiation:      tls.RenegotiateFreelyAsClient,
-		},
-	}}
 }
 
 // StartProxy - starts proxy with current configuration, this method is non blocking.
@@ -229,6 +199,11 @@ func (hf *Hoverfly) processRequest(req *http.Request) *http.Response {
 	respDelay := hf.Simulation.ResponseDelays.GetDelay(requestDetails)
 	if respDelay != nil {
 		respDelay.Execute()
+	}
+
+	respDelayLogNormal := hf.Simulation.ResponseDelaysLogNormal.GetDelay(requestDetails)
+	if respDelayLogNormal != nil {
+		respDelayLogNormal.Execute()
 	}
 
 	return response

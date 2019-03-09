@@ -7,6 +7,7 @@ import (
 	"bytes"
 
 	"github.com/SpectoLabs/hoverfly/functional-tests"
+	"github.com/SpectoLabs/hoverfly/functional-tests/testdata"
 	"github.com/dghubble/sling"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -30,7 +31,7 @@ var _ = Describe("	When using different matchers", func() {
 	Context("Using `xpathMatch`", func() {
 
 		BeforeEach(func() {
-			hoverfly.ImportSimulation(functional_tests.XpathSimulation)
+			hoverfly.ImportSimulation(testdata.XpathMatch)
 		})
 
 		It("should match on the body", func() {
@@ -56,7 +57,7 @@ var _ = Describe("	When using different matchers", func() {
 	Context("Using `xmlMatch`", func() {
 
 		BeforeEach(func() {
-			hoverfly.ImportSimulation(functional_tests.XmlSimulation)
+			hoverfly.ImportSimulation(testdata.XmlMatch)
 		})
 
 		It("should match on the body", func() {
@@ -83,7 +84,7 @@ var _ = Describe("	When using different matchers", func() {
 	Context("Using `jsonMatch`", func() {
 
 		BeforeEach(func() {
-			hoverfly.ImportSimulation(functional_tests.JsonMatchSimulation)
+			hoverfly.ImportSimulation(testdata.JsonMatch)
 		})
 
 		It("should match on the body", func() {
@@ -112,7 +113,7 @@ var _ = Describe("	When using different matchers", func() {
 	Context("Using `jsonPathMatch`", func() {
 
 		BeforeEach(func() {
-			hoverfly.ImportSimulation(functional_tests.JsonPathMatchSimulation)
+			hoverfly.ImportSimulation(testdata.JsonPathMatch)
 		})
 
 		It("should match on the body", func() {
@@ -138,7 +139,7 @@ var _ = Describe("	When using different matchers", func() {
 	Context("Using `regexMatch`", func() {
 
 		BeforeEach(func() {
-			hoverfly.ImportSimulation(functional_tests.RegexMatchSimulation)
+			hoverfly.ImportSimulation(testdata.RegexMatch)
 		})
 
 		It("should match on the body", func() {
@@ -164,7 +165,7 @@ var _ = Describe("	When using different matchers", func() {
 	Context("Using `globMatch`", func() {
 
 		BeforeEach(func() {
-			hoverfly.ImportSimulation(functional_tests.GlobMatchSimulation)
+			hoverfly.ImportSimulation(testdata.GlobMatch)
 		})
 
 		It("should match on the body", func() {
@@ -190,7 +191,7 @@ var _ = Describe("	When using different matchers", func() {
 	Context("Using multiple matchers", func() {
 
 		BeforeEach(func() {
-			hoverfly.ImportSimulation(functional_tests.MultipleMatchSimulation)
+			hoverfly.ImportSimulation(testdata.MultipleMatch)
 		})
 
 		It("should match on the body", func() {
@@ -229,6 +230,58 @@ var _ = Describe("	When using different matchers", func() {
 			Expect(response.StatusCode).To(Equal(502))
 
 			Expect(ioutil.ReadAll(response.Body)).Should(ContainSubstring("There was an error when matching"))
+		})
+	})
+
+	Context("Using header matchers", func() {
+
+		BeforeEach(func() {
+			hoverfly.ImportSimulation(testdata.HeaderMatchers)
+		})
+
+		It("should match on the headers", func() {
+			req := sling.New().Get("http://test.com")
+			req.Set("test", "test")
+
+			response := hoverfly.Proxy(req)
+			Expect(response.StatusCode).To(Equal(200))
+
+			Expect(ioutil.ReadAll(response.Body)).Should(Equal([]byte("header matchers matches")))
+		})
+
+		It("should match on the headers", func() {
+			req := sling.New().Get("http://test.com")
+			req.Set("test2", "one;two;three")
+
+			response := hoverfly.Proxy(req)
+			Expect(response.StatusCode).To(Equal(200))
+
+			Expect(ioutil.ReadAll(response.Body)).Should(Equal([]byte("header matchers matches")))
+		})
+	})
+
+	Context("Using query matchers", func() {
+
+		BeforeEach(func() {
+			hoverfly.ImportSimulation(testdata.QueryMatchers)
+		})
+
+		It("should match on the queries", func() {
+			req := sling.New().Get("http://test.com/?test=test")
+
+			response := hoverfly.Proxy(req)
+			Expect(response.StatusCode).To(Equal(200))
+
+			Expect(ioutil.ReadAll(response.Body)).Should(Equal([]byte("query matchers matches")))
+		})
+
+		It("should match on the queries", func() {
+			req := sling.New().Get("http://test.com?test=test1&test=test2")
+
+			response := hoverfly.Proxy(req)
+			Expect(response.StatusCode).To(Equal(200))
+
+			Expect(ioutil.ReadAll(response.Body)).Should(Equal([]byte("query matchers matches")))
 		})
 	})
 })

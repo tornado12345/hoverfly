@@ -1,44 +1,30 @@
 package matching
 
-func UnscoredStateMatcher(currentState, requiredState map[string]string) *FieldMatch {
-	if requiredState == nil || len(requiredState) == 0 {
-		return FieldMatchWithNoScore(true)
-	}
+import (
+	"github.com/SpectoLabs/hoverfly/core/state"
+	"github.com/SpectoLabs/hoverfly/core/util"
+)
 
-	if currentState == nil || len(currentState) == 0 {
-		return FieldMatchWithNoScore(false)
-	}
-
-	if len(requiredState) > len(currentState) {
-		return FieldMatchWithNoScore(false)
-	}
-
-	for key, value := range requiredState {
-		if _, ok := currentState[key]; !ok {
-			return FieldMatchWithNoScore(false)
-		}
-		if currentState[key] != value {
-			return FieldMatchWithNoScore(false)
-		}
-	}
-
-	return FieldMatchWithNoScore(true)
-}
-
-func ScoredStateMatcher(currentState, requiredState map[string]string) *FieldMatch {
+func StateMatcher(currentState *state.State, requiredState map[string]string) *FieldMatch {
 
 	score := 0
 	matched := true
 
 	if requiredState == nil || len(requiredState) == 0 {
-		return FieldMatchWithNoScore(true)
+		return &FieldMatch{
+			Matched: true,
+			Score:   0,
+		}
 	}
 
+	currentState.RWMutex.RLock()
+	copyState := util.CopyMap(currentState.State)
+	currentState.RWMutex.RUnlock()
 	for key, value := range requiredState {
-		if _, ok := currentState[key]; !ok {
+		if _, ok := copyState[key]; !ok {
 			matched = false
 		}
-		if currentState[key] != value {
+		if copyState[key] != value {
 			matched = false
 		} else {
 			score++
@@ -46,7 +32,7 @@ func ScoredStateMatcher(currentState, requiredState map[string]string) *FieldMat
 	}
 
 	return &FieldMatch{
-		Matched:    matched,
-		MatchScore: score,
+		Matched: matched,
+		Score:   score,
 	}
 }

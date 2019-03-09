@@ -31,7 +31,8 @@
 [[projects]]
   name = "github.com/Sirupsen/logrus"
   packages = ["."]
-  revision = "cd7d1bbe41066b6c1f19780f895901052150a575"
+  revision = "ad15b42461921f1fb3529b058c6786c6a45d5162"
+  version = "v1.1.1"
 
 [[projects]]
   name = "github.com/SpectoLabs/goproxy"
@@ -39,7 +40,7 @@
     ".",
     "ext/auth"
   ]
-  revision = "1dea5983e671e3bdefb224f2683e5c23678be35e"
+  revision = "04eaec60149482b840c282245794775076c34e62"
 
 [[projects]]
   branch = "master"
@@ -55,8 +56,8 @@
     "lexer",
     "parser"
   ]
-  revision = "a2232af10b53ef1ae5a767f5178db3a6c1dab655"
-  version = "v2.0.1"
+  revision = "2eebd0f5dd9564c0c6e439df11d8a3c7b9b9ab11"
+  version = "v2.0.2"
 
 [[projects]]
   name = "github.com/boltdb/bolt"
@@ -67,6 +68,12 @@
   name = "github.com/codegangsta/negroni"
   packages = ["."]
   revision = "24bf3506bb5e25bf9fe26f644872f77656d51b57"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/corpix/uarand"
+  packages = ["."]
+  revision = "2b8494104d86337cdd41d0a49cbed8e4583c0ab4"
 
 [[projects]]
   name = "github.com/dghubble/sling"
@@ -121,6 +128,15 @@
   version = "v1.0.0"
 
 [[projects]]
+  name = "github.com/hashicorp/golang-lru"
+  packages = [
+    ".",
+    "simplelru"
+  ]
+  revision = "20f1fb78b0740ba8c3cb143a61e86ba5c8669768"
+  version = "v0.5.0"
+
+[[projects]]
   name = "github.com/hashicorp/hcl"
   packages = [
     ".",
@@ -136,15 +152,33 @@
   revision = "9a905a34e6280ce905da1a32344b25e81011197a"
 
 [[projects]]
+  branch = "master"
+  name = "github.com/icrowley/fake"
+  packages = ["."]
+  revision = "4178557ae428460c3780a381c824a1f3aceb6325"
+
+[[projects]]
   name = "github.com/inconshreveable/mousetrap"
   packages = ["."]
   revision = "76626ae9c91c4f2a10f34cad8ce83ea42c93bb75"
   version = "v1.0"
 
 [[projects]]
+  branch = "master"
+  name = "github.com/jackwakefield/gopac"
+  packages = ["."]
+  revision = "c4d2e0b9a672ebe23166683a72536344384b0e99"
+
+[[projects]]
   name = "github.com/kardianos/osext"
   packages = ["."]
   revision = "29ae4ffbc9a6fe9fb2bc5029050ce6996ea1d3bc"
+
+[[projects]]
+  name = "github.com/konsorten/go-windows-terminal-sequences"
+  packages = ["."]
+  revision = "5c8c8bd35d3832f5d134ae1e1e375b69a4d25242"
+  version = "v1.0.1"
 
 [[projects]]
   name = "github.com/magiconair/properties"
@@ -237,6 +271,20 @@
 
 [[projects]]
   branch = "master"
+  name = "github.com/robertkrimen/otto"
+  packages = [
+    ".",
+    "ast",
+    "dbg",
+    "file",
+    "parser",
+    "registry",
+    "token"
+  ]
+  revision = "15f95af6e78dcd2030d8195a138bd88d4f403546"
+
+[[projects]]
+  branch = "master"
   name = "github.com/ryanuber/go-glob"
   packages = ["."]
   revision = "256dc444b735e061061cf46c809487313d5b0065"
@@ -320,6 +368,12 @@
   revision = "5bcd134fee4dd1475da17714aac19c0aa0142e2f"
 
 [[projects]]
+  branch = "master"
+  name = "golang.org/x/exp"
+  packages = ["rand"]
+  revision = "d68db9428509638038945048f64207fa0ab318cb"
+
+[[projects]]
   name = "golang.org/x/net"
   packages = [
     "html",
@@ -357,6 +411,40 @@
   revision = "85c29909967d7f171f821e7a42e7b7af76fb9598"
 
 [[projects]]
+  branch = "master"
+  name = "gonum.org/v1/gonum"
+  packages = [
+    "blas",
+    "blas/blas64",
+    "blas/gonum",
+    "floats",
+    "internal/asm/c128",
+    "internal/asm/f32",
+    "internal/asm/f64",
+    "internal/math32",
+    "lapack",
+    "lapack/gonum",
+    "lapack/lapack64",
+    "mat",
+    "mathext",
+    "mathext/internal/amos",
+    "mathext/internal/cephes",
+    "mathext/internal/gonum",
+    "stat",
+    "stat/distuv"
+  ]
+  revision = "48288cca5b5efb2c3c3b0d8b48a6b01b37831bf8"
+
+[[projects]]
+  name = "gopkg.in/sourcemap.v1"
+  packages = [
+    ".",
+    "base64vlq"
+  ]
+  revision = "6e83acea0053641eff084973fee085f0c193c61a"
+  version = "v1.0.5"
+
+[[projects]]
   name = "gopkg.in/yaml.v2"
   packages = ["."]
   revision = "a83829b6f1293c91addabc89d0571c246397bbf4"
@@ -373,6 +461,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "367ec95d16c9675bad0edae14fc113418ea6a5ce3dc734864fb212146aa12244"
+  inputs-digest = "2c4ec2a3f2a070f87f1e45a6352fa0e449b4b18e19b4d60117cc23fce626a814"
   solver-name = "gps-cdcl"
   solver-version = 1

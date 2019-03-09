@@ -13,7 +13,7 @@ import (
 	"github.com/codegangsta/negroni"
 	"github.com/go-zoo/bone"
 
-	handlers "github.com/SpectoLabs/hoverfly/core/handlers"
+	"github.com/SpectoLabs/hoverfly/core/handlers"
 	"github.com/SpectoLabs/hoverfly/core/handlers/v2"
 )
 
@@ -41,10 +41,10 @@ func (this *AdminApi) StartAdminInterface(hoverfly *Hoverfly) {
 // Will add the handlers to the router.
 func (this *AdminApi) addAdminApiRoutes(router *bone.Mux, d *Hoverfly) *bone.Mux {
 	authHandler := &handlers.AuthHandler{
-		d.Authentication,
-		d.Cfg.SecretKey,
-		d.Cfg.JWTExpirationDelta,
-		d.Cfg.AuthEnabled,
+		AB:                 d.Authentication,
+		SecretKey:          d.Cfg.SecretKey,
+		JWTExpirationDelta: d.Cfg.JWTExpirationDelta,
+		Enabled:            d.Cfg.AuthEnabled,
 	}
 
 	authHandler.RegisterRoutes(router)
@@ -70,7 +70,6 @@ func (this *AdminApi) addDashboardRoutes(router *bone.Mux) *bone.Mux {
 	}
 
 	indexHandler := func(w http.ResponseWriter, r *http.Request) {
-		fmt.Println("index.html")
 		file, err := statikFS.Open("/index.html")
 		if err != nil {
 			w.WriteHeader(500)
@@ -104,6 +103,7 @@ func getAllHandlers(hoverfly *Hoverfly) []handlers.AdminHandler {
 		&v2.HoverflyUsageHandler{Hoverfly: hoverfly},
 		&v2.HoverflyVersionHandler{Hoverfly: hoverfly},
 		&v2.HoverflyUpstreamProxyHandler{Hoverfly: hoverfly},
+		&v2.HoverflyPACHandler{Hoverfly: hoverfly},
 		&v2.SimulationHandler{Hoverfly: hoverfly},
 		&v2.CacheHandler{Hoverfly: hoverfly},
 		&v2.LogsHandler{Hoverfly: hoverfly.StoreLogsHook},

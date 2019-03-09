@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 
 	"github.com/SpectoLabs/hoverfly/hoverctl/configuration"
@@ -71,6 +73,26 @@ hoverctl configuration file.
 		target.UpstreamProxyUrl, _ = cmd.Flags().GetString("upstream-proxy")
 		target.HttpsOnly, _ = cmd.Flags().GetBool("https-only")
 
+		if pacFileLocation, _ := cmd.Flags().GetString("pac-file"); pacFileLocation != "" {
+
+			pacFileData, err := configuration.ReadFile(pacFileLocation)
+			handleIfError(err)
+			target.PACFile = string(pacFileData)
+		}
+
+		if clientAuthenticationDestination, _ := cmd.Flags().GetString("client-authentication-destination"); clientAuthenticationDestination != "" {
+			_, err := regexp.Compile(clientAuthenticationDestination)
+
+			if err != nil {
+				handleIfError(errors.New("Client AuthenticationDestination regex pattern does not compile"))
+			}
+
+			target.ClientAuthenticationDestination = clientAuthenticationDestination
+		}
+		target.ClientAuthenticationClientCert, _ = cmd.Flags().GetString("client-authentication-client-cert")
+		target.ClientAuthenticationClientKey, _ = cmd.Flags().GetString("client-authentication-client-key")
+		target.ClientAuthenticationCACert, _ = cmd.Flags().GetString("client-authentication-ca-cert")
+
 		if enableAuth, _ := cmd.Flags().GetBool("auth"); enableAuth {
 			username, _ := cmd.Flags().GetString("username")
 			password, _ := cmd.Flags().GetString("password")
@@ -92,7 +114,7 @@ hoverctl configuration file.
 		handleIfError(err)
 
 		data := [][]string{
-			[]string{"admin-port", strconv.Itoa(target.AdminPort)},
+			{"admin-port", strconv.Itoa(target.AdminPort)},
 		}
 
 		if target.Webserver {
@@ -124,10 +146,16 @@ func init() {
 	startCmd.Flags().String("key", "", "A path to a key file. Overrides the default Hoverfly TLS key")
 	startCmd.Flags().Bool("disable-tls", false, "Disables TLS verification")
 	startCmd.Flags().String("upstream-proxy", "", "A host for which Hoverfly will proxy its requests to")
+	startCmd.Flags().String("pac-file", "", "Configure upstream proxy by PAC file")
 	startCmd.Flags().Bool("https-only", false, "Disables insecure HTTP traffic in Hoverfly")
 	startCmd.Flags().String("listen-on-host", "", "Binds hoverfly listener to a host")
 
-	startCmd.Flags().Bool("auth", false, "Enable authenticiation on Hoverfly")
+	startCmd.Flags().String("client-authentication-destination", "", "Regular expression for hosts need client authentication")
+	startCmd.Flags().String("client-authentication-client-cert", "", "Path to client certificate file used for authentication")
+	startCmd.Flags().String("client-authentication-client-key", "", "Path to client key file used for authentication")
+	startCmd.Flags().String("client-authentication-ca-cert", "", "Path to ca cert file used for authentication")
+
+	startCmd.Flags().Bool("auth", false, "Enable authentication on Hoverfly")
 	startCmd.Flags().String("username", "", "Username to authenticate Hoverfly")
 	startCmd.Flags().String("password", "", "Password to authenticate Hoverfly")
 }

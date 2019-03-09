@@ -5,12 +5,13 @@ import (
 	"net/http"
 	"time"
 
+	sorting "sort"
+	"strings"
+
 	"github.com/SpectoLabs/hoverfly/core/handlers/v2"
 	"github.com/SpectoLabs/hoverfly/core/matching"
 	"github.com/SpectoLabs/hoverfly/core/models"
 	"github.com/SpectoLabs/hoverfly/core/util"
-	sorting "sort"
-	"strings"
 )
 
 var RFC3339Milli = "2006-01-02T15:04:05.000Z07:00"
@@ -142,13 +143,14 @@ func (this Journal) GetFilteredEntries(journalEntryFilterView v2.JournalEntryFil
 	}
 
 	requestMatcher := models.RequestMatcher{
-		Path:        models.NewRequestFieldMatchersFromView(journalEntryFilterView.Request.Path),
-		Method:      models.NewRequestFieldMatchersFromView(journalEntryFilterView.Request.Method),
-		Destination: models.NewRequestFieldMatchersFromView(journalEntryFilterView.Request.Destination),
-		Scheme:      models.NewRequestFieldMatchersFromView(journalEntryFilterView.Request.Scheme),
-		Query:       models.NewRequestFieldMatchersFromView(journalEntryFilterView.Request.Query),
-		Body:        models.NewRequestFieldMatchersFromView(journalEntryFilterView.Request.Body),
-		Headers:     journalEntryFilterView.Request.Headers,
+		Path:            models.NewRequestFieldMatchersFromView(journalEntryFilterView.Request.Path),
+		Method:          models.NewRequestFieldMatchersFromView(journalEntryFilterView.Request.Method),
+		Destination:     models.NewRequestFieldMatchersFromView(journalEntryFilterView.Request.Destination),
+		Scheme:          models.NewRequestFieldMatchersFromView(journalEntryFilterView.Request.Scheme),
+		DeprecatedQuery: models.NewRequestFieldMatchersFromView(journalEntryFilterView.Request.DeprecatedQuery),
+		Body:            models.NewRequestFieldMatchersFromView(journalEntryFilterView.Request.Body),
+		Query:           models.NewQueryRequestFieldMatchersFromMapView(journalEntryFilterView.Request.Query),
+		Headers:         models.NewRequestFieldMatchersFromMapView(journalEntryFilterView.Request.Headers),
 	}
 
 	allEntries := convertJournalEntries(this.entries)
@@ -156,29 +158,32 @@ func (this Journal) GetFilteredEntries(journalEntryFilterView v2.JournalEntryFil
 	for _, entry := range allEntries {
 		if requestMatcher.Body == nil && requestMatcher.Destination == nil &&
 			requestMatcher.Headers == nil && requestMatcher.Method == nil &&
-			requestMatcher.Path == nil && requestMatcher.Query == nil &&
-			requestMatcher.Scheme == nil {
+			requestMatcher.Path == nil && requestMatcher.DeprecatedQuery == nil &&
+			requestMatcher.Scheme == nil && requestMatcher.Query == nil {
 			continue
 		}
-		if !matching.UnscoredFieldMatcher(requestMatcher.Body, *entry.Request.Body).Matched {
+		if !matching.FieldMatcher(requestMatcher.Body, *entry.Request.Body).Matched {
 			continue
 		}
-		if !matching.UnscoredFieldMatcher(requestMatcher.Destination, *entry.Request.Destination).Matched {
+		if !matching.FieldMatcher(requestMatcher.Destination, *entry.Request.Destination).Matched {
 			continue
 		}
-		if !matching.UnscoredFieldMatcher(requestMatcher.Method, *entry.Request.Method).Matched {
+		if !matching.FieldMatcher(requestMatcher.Method, *entry.Request.Method).Matched {
 			continue
 		}
-		if !matching.UnscoredFieldMatcher(requestMatcher.Path, *entry.Request.Path).Matched {
+		if !matching.FieldMatcher(requestMatcher.Path, *entry.Request.Path).Matched {
 			continue
 		}
-		if !matching.UnscoredFieldMatcher(requestMatcher.Query, *entry.Request.Query).Matched {
+		if !matching.FieldMatcher(requestMatcher.DeprecatedQuery, *entry.Request.Query).Matched {
 			continue
 		}
-		if !matching.UnscoredFieldMatcher(requestMatcher.Scheme, *entry.Request.Scheme).Matched {
+		if !matching.FieldMatcher(requestMatcher.Scheme, *entry.Request.Scheme).Matched {
 			continue
 		}
-		if !matching.CountlessHeaderMatcher(requestMatcher.Headers, entry.Request.Headers).Matched {
+		if !matching.QueryMatching(requestMatcher, entry.Request.QueryMap).Matched {
+			continue
+		}
+		if !matching.HeaderMatching(requestMatcher, entry.Request.Headers).Matched {
 			continue
 		}
 		filteredEntries = append(filteredEntries, entry)

@@ -289,7 +289,8 @@ Gets the mode for the running instance of Hoverfly.
 ::
 
     {
-        mode: "simulate"
+        "mode": "capture",
+        "arguments": {}
     }
 
 --------------
@@ -303,7 +304,7 @@ Changes the mode of the running instance of Hoverfly.
 ::
 
     {
-        mode: "simulate"
+        "mode": "capture"
     }
 
 
@@ -361,6 +362,32 @@ Gets the upstream proxy configured for Hoverfly.
         "upstreamProxy": "proxy.corp.big-it-company.org:8080"
     }
 
+
+-------------------------------------------------------------------------------------------------------------
+
+
+GET /api/v2/hoverfly/pac
+""""""""""""""""""""""""
+
+Gets the PAC file configured for Hoverfly.
+
+
+-------------------------------------------------------------------------------------------------------------
+
+
+PUT /api/v2/hoverfly/pac
+""""""""""""""""""""""""
+
+Sets the PAC file for Hoverfly.
+
+
+-------------------------------------------------------------------------------------------------------------
+
+
+DELETE /api/v2/hoverfly/pac
+""""""""""""""""""""""""
+
+Unsets the PAC file configured for Hoverfly.
 
 -------------------------------------------------------------------------------------------------------------
 

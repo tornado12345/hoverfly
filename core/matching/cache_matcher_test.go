@@ -1,13 +1,12 @@
 package matching_test
 
 import (
-	"testing"
-
 	"github.com/SpectoLabs/hoverfly/core/cache"
 	"github.com/SpectoLabs/hoverfly/core/matching"
+	"github.com/SpectoLabs/hoverfly/core/matching/matchers"
 	"github.com/SpectoLabs/hoverfly/core/models"
-	"github.com/SpectoLabs/hoverfly/core/util"
 	. "github.com/onsi/gomega"
+	"testing"
 )
 
 func Test_CacheMatcher_GetCachedResponse_WillReturnErrorIfCacheIsNil(t *testing.T) {
@@ -32,25 +31,20 @@ func Test_CacheMatcher_SaveRequestMatcherResponsePair_WillReturnErrorIfCacheIsNi
 	RegisterTestingT(t)
 	unit := matching.CacheMatcher{}
 
-	err := unit.SaveRequestMatcherResponsePair(models.RequestDetails{}, nil, nil)
+	cachedResponse, err := unit.SaveRequestMatcherResponsePair(models.RequestDetails{}, nil, nil)
 	Expect(err).ToNot(BeNil())
 	Expect(err.Error()).To(Equal("No cache set"))
+	Expect(cachedResponse).To(BeNil())
 }
 
 func Test_CacheMatcher_SaveRequestMatcherResponsePair_CanSaveNilPairs(t *testing.T) {
 	RegisterTestingT(t)
 
 	unit := matching.CacheMatcher{
-		RequestCache: cache.NewInMemoryCache(),
+		RequestCache: cache.NewDefaultLRUCache(),
 	}
 
-	err := unit.SaveRequestMatcherResponsePair(models.RequestDetails{}, nil, nil)
-	Expect(err).To(BeNil())
-
-	cacheValues, err := unit.RequestCache.Get([]byte("d41d8cd98f00b204e9800998ecf8427e"))
-	Expect(err).To(BeNil())
-
-	cachedResponse, err := models.NewCachedResponseFromBytes(cacheValues)
+	cachedResponse, err := unit.SaveRequestMatcherResponsePair(models.RequestDetails{}, nil, nil)
 	Expect(err).To(BeNil())
 
 	Expect(cachedResponse.MatchingPair).To(BeNil())
@@ -77,15 +71,18 @@ func Test_CacheMatcher_PreloadCache_WillReturnErrorIfCacheIsNil(t *testing.T) {
 func Test_CacheMatcher_PreloadCache_WillNotCacheIncompleteRequestMatchers(t *testing.T) {
 	RegisterTestingT(t)
 	unit := matching.CacheMatcher{
-		RequestCache: cache.NewInMemoryCache(),
+		RequestCache: cache.NewDefaultLRUCache(),
 	}
 
 	simulation := models.NewSimulation()
 
-	simulation.AddRequestMatcherResponsePair(&models.RequestMatcherResponsePair{
+	simulation.AddPair(&models.RequestMatcherResponsePair{
 		RequestMatcher: models.RequestMatcher{
-			Body: &models.RequestFieldMatchers{
-				RegexMatch: util.StringToPointer("loose"),
+			Body: []models.RequestFieldMatchers{
+				{
+					Matcher: matchers.Regex,
+					Value:   "loose",
+				},
 			},
 		},
 		Response: models.ResponseDetails{
@@ -97,36 +94,55 @@ func Test_CacheMatcher_PreloadCache_WillNotCacheIncompleteRequestMatchers(t *tes
 	err := unit.PreloadCache(*simulation)
 
 	Expect(err).To(BeNil())
-	Expect(unit.RequestCache.GetAllKeys()).To(HaveLen(0))
+	Expect(unit.RequestCache.RecordsCount()).To(Equal(0))
 }
 
 func Test_CacheMatcher_PreloadCache_WillPreemptivelyCacheFullExactMatchRequestMatchers(t *testing.T) {
 	RegisterTestingT(t)
 	unit := matching.CacheMatcher{
-		RequestCache: cache.NewInMemoryCache(),
+		RequestCache: cache.NewDefaultLRUCache(),
 	}
 
 	simulation := models.NewSimulation()
 
-	simulation.AddRequestMatcherResponsePair(&models.RequestMatcherResponsePair{
+	simulation.AddPair(&models.RequestMatcherResponsePair{
 		RequestMatcher: models.RequestMatcher{
-			Body: &models.RequestFieldMatchers{
-				ExactMatch: util.StringToPointer("body"),
+			Body: []models.RequestFieldMatchers{
+				{
+					Matcher: matchers.Exact,
+					Value:   "body",
+				},
 			},
-			Destination: &models.RequestFieldMatchers{
-				ExactMatch: util.StringToPointer("destination"),
+
+			Destination: []models.RequestFieldMatchers{
+				{
+					Matcher: matchers.Exact,
+					Value:   "destination",
+				},
 			},
-			Method: &models.RequestFieldMatchers{
-				ExactMatch: util.StringToPointer("method"),
+			Method: []models.RequestFieldMatchers{
+				{
+					Matcher: matchers.Exact,
+					Value:   "method",
+				},
 			},
-			Path: &models.RequestFieldMatchers{
-				ExactMatch: util.StringToPointer("path"),
+			Path: []models.RequestFieldMatchers{
+				{
+					Matcher: matchers.Exact,
+					Value:   "path",
+				},
 			},
-			Query: &models.RequestFieldMatchers{
-				ExactMatch: util.StringToPointer("query"),
+			DeprecatedQuery: []models.RequestFieldMatchers{
+				{
+					Matcher: matchers.Exact,
+					Value:   "query",
+				},
 			},
-			Scheme: &models.RequestFieldMatchers{
-				ExactMatch: util.StringToPointer("scheme"),
+			Scheme: []models.RequestFieldMatchers{
+				{
+					Matcher: matchers.Exact,
+					Value:   "scheme",
+				},
 			},
 		},
 		Response: models.ResponseDetails{
@@ -138,21 +154,24 @@ func Test_CacheMatcher_PreloadCache_WillPreemptivelyCacheFullExactMatchRequestMa
 	err := unit.PreloadCache(*simulation)
 
 	Expect(err).To(BeNil())
-	Expect(unit.RequestCache.GetAllKeys()).To(HaveLen(1))
+	Expect(unit.RequestCache.RecordsCount()).To(Equal(1))
 }
 
 func Test_CacheMatcher_PreloadCache_WillNotPreemptivelyCacheRequestMatchersWithoutExactMatches(t *testing.T) {
 	RegisterTestingT(t)
 	unit := matching.CacheMatcher{
-		RequestCache: cache.NewInMemoryCache(),
+		RequestCache: cache.NewDefaultLRUCache(),
 	}
 
 	simulation := models.NewSimulation()
 
-	simulation.AddRequestMatcherResponsePair(&models.RequestMatcherResponsePair{
+	simulation.AddPair(&models.RequestMatcherResponsePair{
 		RequestMatcher: models.RequestMatcher{
-			Destination: &models.RequestFieldMatchers{
-				RegexMatch: util.StringToPointer("destination"),
+			Destination: []models.RequestFieldMatchers{
+				{
+					Matcher: matchers.Regex,
+					Value:   "destination",
+				},
 			},
 		},
 		Response: models.ResponseDetails{
@@ -164,21 +183,24 @@ func Test_CacheMatcher_PreloadCache_WillNotPreemptivelyCacheRequestMatchersWitho
 	err := unit.PreloadCache(*simulation)
 
 	Expect(err).To(BeNil())
-	Expect(unit.RequestCache.GetAllKeys()).To(HaveLen(0))
+	Expect(unit.RequestCache.RecordsCount()).To(Equal(0))
 }
 
 func Test_CacheMatcher_PreloadCache_WillCheckAllRequestMatchersInSimulation(t *testing.T) {
 	RegisterTestingT(t)
 	unit := matching.CacheMatcher{
-		RequestCache: cache.NewInMemoryCache(),
+		RequestCache: cache.NewDefaultLRUCache(),
 	}
 
 	simulation := models.NewSimulation()
 
-	simulation.AddRequestMatcherResponsePair(&models.RequestMatcherResponsePair{
+	simulation.AddPair(&models.RequestMatcherResponsePair{
 		RequestMatcher: models.RequestMatcher{
-			Destination: &models.RequestFieldMatchers{
-				RegexMatch: util.StringToPointer("destination"),
+			Destination: []models.RequestFieldMatchers{
+				{
+					Matcher: matchers.Regex,
+					Value:   "destination",
+				},
 			},
 		},
 		Response: models.ResponseDetails{
@@ -187,25 +209,43 @@ func Test_CacheMatcher_PreloadCache_WillCheckAllRequestMatchersInSimulation(t *t
 		},
 	})
 
-	simulation.AddRequestMatcherResponsePair(&models.RequestMatcherResponsePair{
+	simulation.AddPair(&models.RequestMatcherResponsePair{
 		RequestMatcher: models.RequestMatcher{
-			Body: &models.RequestFieldMatchers{
-				ExactMatch: util.StringToPointer("body"),
+			Body: []models.RequestFieldMatchers{
+				{
+					Matcher: matchers.Exact,
+					Value:   "body",
+				},
 			},
-			Destination: &models.RequestFieldMatchers{
-				ExactMatch: util.StringToPointer("destination"),
+			Destination: []models.RequestFieldMatchers{
+				{
+					Matcher: matchers.Exact,
+					Value:   "destination",
+				},
 			},
-			Method: &models.RequestFieldMatchers{
-				ExactMatch: util.StringToPointer("method"),
+			Method: []models.RequestFieldMatchers{
+				{
+					Matcher: matchers.Exact,
+					Value:   "method",
+				},
 			},
-			Path: &models.RequestFieldMatchers{
-				ExactMatch: util.StringToPointer("path"),
+			Path: []models.RequestFieldMatchers{
+				{
+					Matcher: matchers.Exact,
+					Value:   "path",
+				},
 			},
-			Query: &models.RequestFieldMatchers{
-				ExactMatch: util.StringToPointer("query"),
+			DeprecatedQuery: []models.RequestFieldMatchers{
+				{
+					Matcher: matchers.Exact,
+					Value:   "query",
+				},
 			},
-			Scheme: &models.RequestFieldMatchers{
-				ExactMatch: util.StringToPointer("scheme"),
+			Scheme: []models.RequestFieldMatchers{
+				{
+					Matcher: matchers.Exact,
+					Value:   "scheme",
+				},
 			},
 		},
 		Response: models.ResponseDetails{
@@ -217,21 +257,24 @@ func Test_CacheMatcher_PreloadCache_WillCheckAllRequestMatchersInSimulation(t *t
 	err := unit.PreloadCache(*simulation)
 
 	Expect(err).To(BeNil())
-	Expect(unit.RequestCache.GetAllKeys()).To(HaveLen(1))
+	Expect(unit.RequestCache.RecordsCount()).To(Equal(1))
 }
 
 func Test_CacheMatcher_PreloadCache_WillNotCacheMatchersWithHeaders(t *testing.T) {
 	RegisterTestingT(t)
 	unit := matching.CacheMatcher{
-		RequestCache: cache.NewInMemoryCache(),
+		RequestCache: cache.NewDefaultLRUCache(),
 	}
 
 	simulation := models.NewSimulation()
 
-	simulation.AddRequestMatcherResponsePair(&models.RequestMatcherResponsePair{
+	simulation.AddPair(&models.RequestMatcherResponsePair{
 		RequestMatcher: models.RequestMatcher{
-			Destination: &models.RequestFieldMatchers{
-				RegexMatch: util.StringToPointer("destination"),
+			Destination: []models.RequestFieldMatchers{
+				{
+					Matcher: matchers.Regex,
+					Value:   "destination",
+				},
 			},
 		},
 		Response: models.ResponseDetails{
@@ -240,28 +283,51 @@ func Test_CacheMatcher_PreloadCache_WillNotCacheMatchersWithHeaders(t *testing.T
 		},
 	})
 
-	simulation.AddRequestMatcherResponsePair(&models.RequestMatcherResponsePair{
+	simulation.AddPair(&models.RequestMatcherResponsePair{
 		RequestMatcher: models.RequestMatcher{
-			Body: &models.RequestFieldMatchers{
-				ExactMatch: util.StringToPointer("body"),
+			Body: []models.RequestFieldMatchers{
+				{
+					Matcher: matchers.Exact,
+					Value:   "body",
+				},
 			},
-			Destination: &models.RequestFieldMatchers{
-				ExactMatch: util.StringToPointer("destination"),
+			Destination: []models.RequestFieldMatchers{
+				{
+					Matcher: matchers.Exact,
+					Value:   "destination",
+				},
 			},
-			Headers: map[string][]string{
-				"Headers": {"value"},
+			Headers: map[string][]models.RequestFieldMatchers{
+				"Headers": {
+					{
+						Matcher: matchers.Exact,
+						Value:   "value",
+					},
+				},
 			},
-			Method: &models.RequestFieldMatchers{
-				ExactMatch: util.StringToPointer("method"),
+			Method: []models.RequestFieldMatchers{
+				{
+					Matcher: matchers.Exact,
+					Value:   "method",
+				},
 			},
-			Path: &models.RequestFieldMatchers{
-				ExactMatch: util.StringToPointer("path"),
+			Path: []models.RequestFieldMatchers{
+				{
+					Matcher: matchers.Exact,
+					Value:   "path",
+				},
 			},
-			Query: &models.RequestFieldMatchers{
-				ExactMatch: util.StringToPointer("query"),
+			DeprecatedQuery: []models.RequestFieldMatchers{
+				{
+					Matcher: matchers.Exact,
+					Value:   "query",
+				},
 			},
-			Scheme: &models.RequestFieldMatchers{
-				ExactMatch: util.StringToPointer("scheme"),
+			Scheme: []models.RequestFieldMatchers{
+				{
+					Matcher: matchers.Exact,
+					Value:   "scheme",
+				},
 			},
 		},
 		Response: models.ResponseDetails{
@@ -273,5 +339,5 @@ func Test_CacheMatcher_PreloadCache_WillNotCacheMatchersWithHeaders(t *testing.T
 	err := unit.PreloadCache(*simulation)
 
 	Expect(err).To(BeNil())
-	Expect(unit.RequestCache.GetAllKeys()).To(HaveLen(0))
+	Expect(unit.RequestCache.RecordsCount()).To(Equal(0))
 }

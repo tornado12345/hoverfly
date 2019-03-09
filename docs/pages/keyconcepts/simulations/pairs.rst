@@ -17,7 +17,7 @@ When Hoverfly captures a request, it creates a Request Matcher for each field in
 the request field name, the type of match which will be used to compare the field in the incoming request to the field in the stored
 request, and the request field value.
  
-By default, Hoverfly will set the type of match to :code:`exactMatch` for each field. 
+By default, Hoverfly will set the type of match to :code:`exact` for each field. 
 
 .. seealso::
 
@@ -33,25 +33,25 @@ An example Request Matcher Set might look like this:
 +-------------+-------------+------------------------------------+
 | Field       | Matcher Type| Value                              |
 +=============+=============+====================================+
-| scheme      | exactMatch  | "https"                            |
+| scheme      | exact       | "https"                            |
 +-------------+-------------+------------------------------------+
-| method      | exactMatch  | "GET"                              |
+| method      | exact       | "GET"                              |
 +-------------+-------------+------------------------------------+
-| destination | exactMatch  | "docs.hoverfly.io"                 |         
+| destination | exact       | "docs.hoverfly.io"                 |         
 +-------------+-------------+------------------------------------+
-| path        | exactMatch  | "/pages/keyconcepts/templates.html"|
+| path        | exact       | "/pages/keyconcepts/templates.html"|
 +-------------+-------------+------------------------------------+
-| query       | exactMatch  | "query=true"                       |
+| query       | exact       | "query=true"                       |
 +-------------+-------------+------------------------------------+
-| body        | exactMatch  | ""                                 |
+| body        | exact       | ""                                 |
 +-------------+-------------+------------------------------------+
-| headers     | exactMatch  |                                    |
+| headers     | exact       |                                    |
 +-------------+-------------+------------------------------------+
 
 In the Hoverfly simulation JSON file, this Request Matcher Set would be represented like this: 
 
 .. literalinclude:: ../../simulations/basic-simulation.json
-   :lines: 16-35
+   :lines: 5-44
    :linenos:
    :language: javascript
 
@@ -67,7 +67,7 @@ that Hoverfly will return one stored response for multiple incoming requests.
 For example, this Request Matcher will match any incoming request to the :code:`docs.hoverfly.io` destination:
 
 .. literalinclude:: ../../simulations/all-matchers-simulation.json
-   :lines: 17-19
+   :lines: 6-11
    :linenos:
    :language: javascript
 
@@ -78,7 +78,7 @@ For example, this Request Matcher will match any incoming request to the :code:`
 In the example below, the :code:`globMatch` Request Matcher type is used to match any subdomain of :code:`hoverfly.io`:
 
 .. literalinclude:: ../../simulations/all-matchers-simulation.json
-   :lines: 35-37
+   :lines: 27-32
    :linenos:
    :language: javascript
    
@@ -94,7 +94,7 @@ incoming requests to :code:`docs.hoverfly.io` and :code:`dogs.hoverfly.io` will 
 :code:`cats.hoverfly.io` will not be matched.
 
 .. literalinclude:: ../../simulations/all-matchers-simulation.json
-   :lines: 53-56
+   :lines: 48-57
    :linenos:
    :language: javascript
    
@@ -119,7 +119,7 @@ Responses
 Each Request Matcher Set has a response associated with is. If the request match is successful, Hoverfly will return the response to the client.
 
 .. literalinclude:: ../../simulations/basic-simulation.json
-   :lines: 5-15
+   :lines: 45-55
    :linenos:
    :language: javascript
 
@@ -130,11 +130,10 @@ Editing the fields in response, combined with editing the Request Matcher set, m
 Binary data in responses
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-Since JSON does not support binary data, binary responses are base64 encoded. This is denoted by the encodedBody field. 
-Hoverfly automatically encodes and decodes the data during the export and import phases.
+JSON is a text-based file format so it has no intrinsic support for binary data. Therefore if Hoverfly a response body contains binary data (images, gzipped, etc), the response body will be base64 encoded and the `encodedBody` field set to true.
 
 .. literalinclude:: ../../simulations/basic-encoded-simulation.json
-   :lines: 7-8
+   :lines: 47-48
    :linenos:
    :language: javascript
 

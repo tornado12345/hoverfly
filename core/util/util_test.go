@@ -128,7 +128,7 @@ func Test_GetContentTypeFromHeaders_ReturnsJsonIfJson(t *testing.T) {
 	RegisterTestingT(t)
 
 	Expect(GetContentTypeFromHeaders(map[string][]string{
-		"Content-Type": []string{"application/json"},
+		"Content-Type": {"application/json"},
 	})).To(Equal("json"))
 }
 
@@ -136,7 +136,7 @@ func Test_GetContentTypeFromHeaders_ReturnsXmlIfXml(t *testing.T) {
 	RegisterTestingT(t)
 
 	Expect(GetContentTypeFromHeaders(map[string][]string{
-		"Content-Type": []string{"application/xml"},
+		"Content-Type": {"application/xml"},
 	})).To(Equal("xml"))
 }
 
@@ -191,4 +191,22 @@ func Test_MinifyXml_SimplifiesXmlString(t *testing.T) {
 	Expect(MinifyXml(`<xml>
 		<document></document>
 	</xml>`)).To(Equal(`<xml><document/></xml>`))
+}
+
+func Test_CopyMap(t *testing.T) {
+	RegisterTestingT(t)
+
+	originalMap := make(map[string]string)
+	originalMap["first"] = "1"
+	originalMap["second"] = "2"
+
+	newMap := CopyMap(originalMap)
+
+	delete(originalMap, "first")
+	originalMap["second"] = ""
+	originalMap["third"] = "3"
+
+	Expect(newMap).To(HaveLen(2))
+	Expect(newMap["first"]).To(Equal("1"))
+	Expect(newMap["second"]).To(Equal("2"))
 }

@@ -2,13 +2,15 @@ package hoverfly
 
 import (
 	"bytes"
+	"github.com/aymerick/raymond"
 	"io/ioutil"
 	"net/http"
-
 	"strings"
 
 	log "github.com/Sirupsen/logrus"
+	"github.com/SpectoLabs/hoverfly/core/errors"
 	"github.com/SpectoLabs/hoverfly/core/matching"
+	"github.com/SpectoLabs/hoverfly/core/matching/matchers"
 	"github.com/SpectoLabs/hoverfly/core/models"
 	"github.com/SpectoLabs/hoverfly/core/modes"
 	"github.com/SpectoLabs/hoverfly/core/util"
@@ -24,7 +26,11 @@ func (hf *Hoverfly) DoRequest(request *http.Request) (*http.Response, error) {
 
 	request.Body = ioutil.NopCloser(bytes.NewReader(requestBody))
 
-	resp, err := hf.HTTP.Do(request)
+	client, err := GetHttpClient(hf, request.Host)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := client.Do(request)
 
 	request.Body = ioutil.NopCloser(bytes.NewReader(requestBody))
 	if err != nil {
@@ -38,101 +44,104 @@ func (hf *Hoverfly) DoRequest(request *http.Request) (*http.Response, error) {
 }
 
 // GetResponse returns stored response from cache
-func (hf *Hoverfly) GetResponse(requestDetails models.RequestDetails) (*models.ResponseDetails, *matching.MatchingError) {
+func (hf *Hoverfly) GetResponse(requestDetails models.RequestDetails) (*models.ResponseDetails, *errors.HoverflyError) {
 
 	var response models.ResponseDetails
+	var cachedResponse *models.CachedResponse
 
 	cachedResponse, cacheErr := hf.CacheMatcher.GetCachedResponse(&requestDetails)
 
 	// Get the cached response and return if there is a miss
 	if cacheErr == nil && cachedResponse.MatchingPair == nil {
-		return nil, matching.MissedError(cachedResponse.ClosestMiss)
+		return nil, errors.MatchingFailedError(cachedResponse.ClosestMiss)
 		// If it's cached, use that response
 	} else if cacheErr == nil {
 		response = cachedResponse.MatchingPair.Response
 		//If it's not cached, perform matching to find a hit
 	} else {
-		var pair *models.RequestMatcherResponsePair
-		var err *models.MatchError
-		var cachable bool
-
 		mode := (hf.modeMap[modes.Simulate]).(*modes.SimulateMode)
 
-		strongestMatch := strings.ToLower(mode.MatchingStrategy) == "strongest"
-
 		// Matching
-		if strongestMatch {
-			pair, err, cachable = matching.StrongestMatchRequestMatcher(requestDetails, hf.Cfg.Webserver, hf.Simulation, hf.state)
-		} else {
-			pair, err, cachable = matching.FirstMatchRequestMatcher(requestDetails, hf.Cfg.Webserver, hf.Simulation, hf.state)
-		}
+		result := matching.Match(mode.MatchingStrategy, requestDetails, hf.Cfg.Webserver, hf.Simulation, hf.state)
 
 		// Cache result
-		if cachable {
-			hf.CacheMatcher.SaveRequestMatcherResponsePair(requestDetails, pair, err)
+		if result.Cachable {
+			cachedResponse, _ = hf.CacheMatcher.SaveRequestMatcherResponsePair(requestDetails, result.Pair, result.Error)
 		}
 
 		// If we miss, just return
-		if err != nil {
+		if result.Error != nil {
 			log.WithFields(log.Fields{
-				"error":       err.Error(),
+				"error":       result.Error.Error(),
 				"query":       requestDetails.Query,
 				"path":        requestDetails.Path,
 				"destination": requestDetails.Destination,
 				"method":      requestDetails.Method,
 			}).Warn("Failed to find matching request from simulation")
 
-			return nil, matching.MissedError(err.ClosestMiss)
+			return nil, errors.MatchingFailedError(result.Error.ClosestMiss)
 		} else {
-			response = pair.Response
+			response = result.Pair.Response
 		}
 	}
 
 	// Templating applies at the end, once we have loaded a response. Comes BEFORE state transitions,
 	// as we use the current state in templates
 	if response.Templated == true {
-		responseBody, err := hf.templator.ApplyTemplate(&requestDetails, hf.state, response.Body)
+
+		var template *raymond.Template
+		if cachedResponse != nil && cachedResponse.ResponseTemplate != nil {
+			template = cachedResponse.ResponseTemplate
+		} else {
+			// Parse and cache the template
+			template, _ = hf.templator.ParseTemplate(response.Body)
+			if cachedResponse != nil {
+				cachedResponse.ResponseTemplate = template
+			}
+		}
+
+		responseBody, err :=  hf.templator.RenderTemplate(template, &requestDetails, hf.state.State)
+
 		if err == nil {
 			response.Body = responseBody
+		} else {
+			log.Warnf("Failed to render response template: %s", err.Error())
 		}
 	}
 
 	// State transitions after we have the response
 	if response.TransitionsState != nil {
-		hf.TransitionState(response.TransitionsState)
+		hf.state.PatchState(response.TransitionsState)
 	}
 	if response.RemovesState != nil {
-		hf.RemoveState(response.RemovesState)
+		hf.state.RemoveState(response.RemovesState)
 	}
 
 	return &response, nil
 }
 
-func (hf *Hoverfly) TransitionState(transition map[string]string) {
-	for k, v := range transition {
-		hf.state[k] = v
-	}
-}
-
-func (hf *Hoverfly) RemoveState(toRemove []string) {
-	for _, key := range toRemove {
-		delete(hf.state, key)
-	}
-}
-
 // save gets request fingerprint, extracts request body, status code and headers, then saves it to cache
-func (hf *Hoverfly) Save(request *models.RequestDetails, response *models.ResponseDetails, headersWhitelist []string) error {
-	body := &models.RequestFieldMatchers{
-		ExactMatch: util.StringToPointer(request.Body),
+func (hf *Hoverfly) Save(request *models.RequestDetails, response *models.ResponseDetails, headersWhitelist []string, recordSequence bool) error {
+	body := []models.RequestFieldMatchers{
+		{
+			Matcher: matchers.Exact,
+			Value:   request.Body,
+		},
 	}
 	contentType := util.GetContentTypeFromHeaders(request.Headers)
 	if contentType == "json" {
-		body = &models.RequestFieldMatchers{
-			JsonMatch: util.StringToPointer(request.Body),
+		body = []models.RequestFieldMatchers{
+			{
+				Matcher: matchers.Json,
+				Value:   request.Body,
+			},
 		}
 	} else if contentType == "xml" {
-		body = &models.RequestFieldMatchers{
-			XmlMatch: util.StringToPointer(request.Body),
+		body = []models.RequestFieldMatchers{
+			{
+				Matcher: matchers.Xml,
+				Value:   request.Body,
+			},
 		}
 	}
 
@@ -153,30 +162,63 @@ func (hf *Hoverfly) Save(request *models.RequestDetails, response *models.Respon
 		}
 	}
 
+	requestHeaders := map[string][]models.RequestFieldMatchers{}
+	for headerKey, headerValues := range headers {
+		requestHeaders[headerKey] = []models.RequestFieldMatchers{
+			{
+				Matcher: matchers.Exact,
+				Value:   strings.Join(headerValues, ";"),
+			},
+		}
+	}
+
+	queries := &models.QueryRequestFieldMatchers{}
+	for key, values := range request.Query {
+		queries.Add(key, []models.RequestFieldMatchers{
+			{
+				Matcher: matchers.Exact,
+				Value:   strings.Join(values, ";"),
+			},
+		})
+	}
+
 	pair := models.RequestMatcherResponsePair{
 		RequestMatcher: models.RequestMatcher{
-			Path: &models.RequestFieldMatchers{
-				ExactMatch: util.StringToPointer(request.Path),
+			Path: []models.RequestFieldMatchers{
+				{
+					Matcher: matchers.Exact,
+					Value:   request.Path,
+				},
 			},
-			Method: &models.RequestFieldMatchers{
-				ExactMatch: util.StringToPointer(request.Method),
+			Method: []models.RequestFieldMatchers{
+				{
+					Matcher: matchers.Exact,
+					Value:   request.Method,
+				},
 			},
-			Destination: &models.RequestFieldMatchers{
-				ExactMatch: util.StringToPointer(request.Destination),
+			Destination: []models.RequestFieldMatchers{
+				{
+					Matcher: matchers.Exact,
+					Value:   request.Destination,
+				},
 			},
-			Scheme: &models.RequestFieldMatchers{
-				ExactMatch: util.StringToPointer(request.Scheme),
+			Scheme: []models.RequestFieldMatchers{
+				{
+					Matcher: matchers.Exact,
+					Value:   request.Scheme,
+				},
 			},
-			Query: &models.RequestFieldMatchers{
-				ExactMatch: util.StringToPointer(request.QueryString()),
-			},
+			Query:   queries,
 			Body:    body,
-			Headers: headers,
+			Headers: requestHeaders,
 		},
 		Response: *response,
 	}
-
-	hf.Simulation.AddRequestMatcherResponsePair(&pair)
+	if recordSequence {
+		hf.Simulation.AddPairInSequence(&pair, hf.state)
+	} else {
+		hf.Simulation.AddPair(&pair)
+	}
 
 	return nil
 }

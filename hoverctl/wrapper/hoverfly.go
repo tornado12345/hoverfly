@@ -14,9 +14,7 @@ import (
 	"time"
 
 	log "github.com/Sirupsen/logrus"
-	"github.com/SpectoLabs/hoverfly/core/handlers"
 	"github.com/SpectoLabs/hoverfly/core/handlers/v2"
-	"github.com/SpectoLabs/hoverfly/core/util"
 	"github.com/SpectoLabs/hoverfly/hoverctl/configuration"
 	"github.com/kardianos/osext"
 )
@@ -27,6 +25,7 @@ const (
 	v2ApiDestination = "/api/v2/hoverfly/destination"
 	v2ApiState       = "/api/v2/state"
 	v2ApiMiddleware  = "/api/v2/hoverfly/middleware"
+	v2ApiPac         = "/api/v2/hoverfly/pac"
 	v2ApiCache       = "/api/v2/cache"
 	v2ApiLogs        = "/api/v2/logs"
 	v2ApiHoverfly    = "/api/v2/hoverfly"
@@ -75,38 +74,6 @@ func UnmarshalToInterface(response *http.Response, v interface{}) error {
 	}
 
 	return json.Unmarshal(body, v)
-}
-
-func createAPIStateResponse(response *http.Response) APIStateSchema {
-	body, err := ioutil.ReadAll(response.Body)
-	if err != nil {
-		log.Debug(err.Error())
-	}
-
-	var apiResponse APIStateSchema
-
-	err = json.Unmarshal(body, &apiResponse)
-	if err != nil {
-		log.Debug(err.Error())
-	}
-
-	return apiResponse
-}
-
-func createMiddlewareSchema(response *http.Response) v2.MiddlewareView {
-	body, err := ioutil.ReadAll(response.Body)
-	if err != nil {
-		log.Debug(err.Error())
-	}
-
-	var middleware v2.MiddlewareView
-
-	err = json.Unmarshal(body, &middleware)
-	if err != nil {
-		log.Debug(err.Error())
-	}
-
-	return middleware
 }
 
 func Login(target configuration.Target, username, password string) (string, error) {
@@ -162,11 +129,7 @@ func Login(target configuration.Target, username, password string) (string, erro
 
 func BuildURL(target configuration.Target, endpoint string) string {
 	if !strings.HasPrefix(target.Host, "http://") && !strings.HasPrefix(target.Host, "https://") {
-		if IsLocal(target.Host) {
-			return fmt.Sprintf("http://%v:%v%v", target.Host, target.AdminPort, endpoint)
-		} else {
-			return fmt.Sprintf("https://%v:%v%v", target.Host, target.AdminPort, endpoint)
-		}
+		return fmt.Sprintf("http://%v:%v%v", target.Host, target.AdminPort, endpoint)
 	}
 	return fmt.Sprintf("%v:%v%v", target.Host, target.AdminPort, endpoint)
 }
@@ -238,6 +201,10 @@ func Start(target *configuration.Target) error {
 		if statusCode == 200 {
 			break
 		}
+	}
+
+	if target.PACFile != "" {
+		SetPACFile(*target)
 	}
 
 	return nil
@@ -334,33 +301,18 @@ func checkPorts(ports ...int) error {
 	return nil
 }
 
-func handlerError(response *http.Response) error {
-	responseBody, err := util.GetResponseBody(response)
-	if err != nil {
-		return errors.New("Error when communicating with Hoverfly")
-	}
-
-	var errorView handlers.ErrorView
-	err = json.Unmarshal([]byte(responseBody), &errorView)
-	if err != nil {
-		return errors.New("Error when communicating with Hoverfly")
-	}
-
-	return errors.New(errorView.Error)
-}
-
 func handleResponseError(response *http.Response, errorMessage string) error {
 	if response.StatusCode != 200 {
 		defer response.Body.Close()
 		responseError, _ := ioutil.ReadAll(response.Body)
 
-		error := &ErrorSchema{}
+		errSchema := &ErrorSchema{}
 
-		err := json.Unmarshal(responseError, error)
+		err := json.Unmarshal(responseError, errSchema)
 		if err != nil {
-			return errors.New(errorMessage + "\n\n" + string(errorMessage))
+			return errors.New(errorMessage + "\n\n" + string(responseError))
 		}
-		return errors.New(errorMessage + "\n\n" + error.ErrorMessage)
+		return errors.New(errorMessage + "\n\n" + errSchema.ErrorMessage)
 	}
 
 	return nil

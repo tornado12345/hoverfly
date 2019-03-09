@@ -7,10 +7,10 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func Test_NewSimulationViewFromResponseBody_CanCreateSimulationFromV3Payload(t *testing.T) {
+func Test_NewSimulationViewFromRequestBody_CanCreateSimulationFromV3Payload(t *testing.T) {
 	RegisterTestingT(t)
 
-	simulation, err := v2.NewSimulationViewFromResponseBody([]byte(`{
+	simulation, err := v2.NewSimulationViewFromRequestBody([]byte(`{
 		"data": {
 			"pairs": [
 				{
@@ -33,7 +33,10 @@ func Test_NewSimulationViewFromResponseBody_CanCreateSimulationFromV3Payload(t *
 				}
 			],
 			"globalActions": {
-				"delays": []
+				"delays": [],
+				"delaysLogNormal": [
+					{"min": 1, "max": 4, "mean": 3, "median" :2}
+				]
 			}
 		},
 		"meta": {
@@ -47,13 +50,14 @@ func Test_NewSimulationViewFromResponseBody_CanCreateSimulationFromV3Payload(t *
 
 	Expect(simulation.RequestResponsePairs).To(HaveLen(1))
 
-	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Body).To(BeNil())
-	Expect(*simulation.RequestResponsePairs[0].RequestMatcher.Destination.ExactMatch).To(Equal("test-server.com"))
-	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Headers).To(BeNil())
-	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Method).To(BeNil())
-	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Path).To(BeNil())
-	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Query).To(BeNil())
-	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Scheme).To(BeNil())
+	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Body).To(HaveLen(0))
+	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Destination[0].Matcher).To(Equal("exact"))
+	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Destination[0].Value).To(Equal("test-server.com"))
+	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Headers).To(HaveLen(0))
+	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Method).To(HaveLen(0))
+	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Path).To(HaveLen(0))
+	Expect(simulation.RequestResponsePairs[0].RequestMatcher.DeprecatedQuery).To(HaveLen(0))
+	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Scheme).To(HaveLen(0))
 
 	Expect(simulation.RequestResponsePairs[0].Response.Body).To(Equal("exact match"))
 	Expect(simulation.RequestResponsePairs[0].Response.Templated).To(BeTrue())
@@ -61,15 +65,20 @@ func Test_NewSimulationViewFromResponseBody_CanCreateSimulationFromV3Payload(t *
 	Expect(simulation.RequestResponsePairs[0].Response.Headers).To(HaveKeyWithValue("Header", []string{"value"}))
 	Expect(simulation.RequestResponsePairs[0].Response.Status).To(Equal(200))
 
+	Expect(simulation.GlobalActions.DelaysLogNormal[0].Min).To(Equal(1))
+	Expect(simulation.GlobalActions.DelaysLogNormal[0].Max).To(Equal(4))
+	Expect(simulation.GlobalActions.DelaysLogNormal[0].Mean).To(Equal(3))
+	Expect(simulation.GlobalActions.DelaysLogNormal[0].Median).To(Equal(2))
+
 	Expect(simulation.SchemaVersion).To(Equal("v3"))
 	Expect(simulation.HoverflyVersion).To(Equal("v0.11.0"))
 	Expect(simulation.TimeExported).To(Equal("2017-02-23T12:43:48Z"))
 }
 
-func Test_NewSimulationViewFromResponseBody_CanCreateSimulationFromV2Payload(t *testing.T) {
+func Test_NewSimulationViewFromRequestBody_CanCreateSimulationFromV2Payload(t *testing.T) {
 	RegisterTestingT(t)
 
-	simulation, err := v2.NewSimulationViewFromResponseBody([]byte(`{
+	simulation, err := v2.NewSimulationViewFromRequestBody([]byte(`{
 		"data": {
 			"pairs": [
 				{
@@ -91,7 +100,10 @@ func Test_NewSimulationViewFromResponseBody_CanCreateSimulationFromV2Payload(t *
 				}
 			],
 			"globalActions": {
-				"delays": []
+				"delays": [],
+				"delaysLogNormal": [
+					{"min": 1, "max": 4, "mean": 3, "median" :2}
+				]
 			}
 		},
 		"meta": {
@@ -105,13 +117,14 @@ func Test_NewSimulationViewFromResponseBody_CanCreateSimulationFromV2Payload(t *
 
 	Expect(simulation.RequestResponsePairs).To(HaveLen(1))
 
-	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Body).To(BeNil())
-	Expect(*simulation.RequestResponsePairs[0].RequestMatcher.Destination.ExactMatch).To(Equal("test-server.com"))
-	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Headers).To(BeNil())
-	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Method).To(BeNil())
-	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Path).To(BeNil())
-	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Query).To(BeNil())
-	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Scheme).To(BeNil())
+	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Body).To(HaveLen(0))
+	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Destination[0].Matcher).To(Equal("exact"))
+	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Destination[0].Value).To(Equal("test-server.com"))
+	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Headers).To(HaveLen(0))
+	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Method).To(HaveLen(0))
+	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Path).To(HaveLen(0))
+	Expect(simulation.RequestResponsePairs[0].RequestMatcher.DeprecatedQuery).To(HaveLen(0))
+	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Scheme).To(HaveLen(0))
 
 	Expect(simulation.RequestResponsePairs[0].Response.Body).To(Equal("exact match"))
 	Expect(simulation.RequestResponsePairs[0].Response.Templated).To(BeFalse())
@@ -119,15 +132,20 @@ func Test_NewSimulationViewFromResponseBody_CanCreateSimulationFromV2Payload(t *
 	Expect(simulation.RequestResponsePairs[0].Response.Headers).To(HaveKeyWithValue("Header", []string{"value"}))
 	Expect(simulation.RequestResponsePairs[0].Response.Status).To(Equal(200))
 
+	Expect(simulation.GlobalActions.DelaysLogNormal[0].Min).To(Equal(1))
+	Expect(simulation.GlobalActions.DelaysLogNormal[0].Max).To(Equal(4))
+	Expect(simulation.GlobalActions.DelaysLogNormal[0].Mean).To(Equal(3))
+	Expect(simulation.GlobalActions.DelaysLogNormal[0].Median).To(Equal(2))
+
 	Expect(simulation.SchemaVersion).To(Equal("v3"))
 	Expect(simulation.HoverflyVersion).To(Equal("v0.11.0"))
 	Expect(simulation.TimeExported).To(Equal("2017-02-23T12:43:48Z"))
 }
 
-func Test_NewSimulationViewFromResponseBody_WontCreateSimulationIfThereIsNoSchemaVersion(t *testing.T) {
+func Test_NewSimulationViewFromRequestBody_WontCreateSimulationIfThereIsNoSchemaVersion(t *testing.T) {
 	RegisterTestingT(t)
 
-	simulation, err := v2.NewSimulationViewFromResponseBody([]byte(`{
+	simulation, err := v2.NewSimulationViewFromRequestBody([]byte(`{
 		"data": {},
 		"meta": {
 			"hoverflyVersion": "v0.11.0",
@@ -141,12 +159,13 @@ func Test_NewSimulationViewFromResponseBody_WontCreateSimulationIfThereIsNoSchem
 	Expect(simulation).ToNot(BeNil())
 	Expect(simulation.RequestResponsePairs).To(HaveLen(0))
 	Expect(simulation.GlobalActions.Delays).To(HaveLen(0))
+	Expect(simulation.GlobalActions.DelaysLogNormal).To(HaveLen(0))
 }
 
-func Test_NewSimulationViewFromResponseBody_WontBlowUpIfMetaIsMissing(t *testing.T) {
+func Test_NewSimulationViewFromRequestBody_WontBlowUpIfMetaIsMissing(t *testing.T) {
 	RegisterTestingT(t)
 
-	simulation, err := v2.NewSimulationViewFromResponseBody([]byte(`{
+	simulation, err := v2.NewSimulationViewFromRequestBody([]byte(`{
 		"data": {}
 	}`))
 
@@ -156,12 +175,13 @@ func Test_NewSimulationViewFromResponseBody_WontBlowUpIfMetaIsMissing(t *testing
 	Expect(simulation).ToNot(BeNil())
 	Expect(simulation.RequestResponsePairs).To(HaveLen(0))
 	Expect(simulation.GlobalActions.Delays).To(HaveLen(0))
+	Expect(simulation.GlobalActions.DelaysLogNormal).To(HaveLen(0))
 }
 
-func Test_NewSimulationViewFromResponseBody_CanCreateSimulationFromV1Payload(t *testing.T) {
+func Test_NewSimulationViewFromRequestBody_CanCreateSimulationFromV1Payload(t *testing.T) {
 	RegisterTestingT(t)
 
-	simulation, err := v2.NewSimulationViewFromResponseBody([]byte(`{
+	simulation, err := v2.NewSimulationViewFromRequestBody([]byte(`{
 		"data": {
 			"pairs": [
 				{
@@ -195,13 +215,14 @@ func Test_NewSimulationViewFromResponseBody_CanCreateSimulationFromV1Payload(t *
 
 	Expect(simulation.RequestResponsePairs).To(HaveLen(1))
 
-	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Body).To(BeNil())
-	Expect(*simulation.RequestResponsePairs[0].RequestMatcher.Destination.ExactMatch).To(Equal("test-server.com"))
-	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Headers).To(BeNil())
-	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Method).To(BeNil())
-	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Path).To(BeNil())
-	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Query).To(BeNil())
-	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Scheme).To(BeNil())
+	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Body).To(HaveLen(0))
+	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Destination[0].Matcher).To(Equal("exact"))
+	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Destination[0].Value).To(Equal("test-server.com"))
+	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Headers).To(HaveLen(0))
+	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Method).To(HaveLen(0))
+	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Path).To(HaveLen(0))
+	Expect(simulation.RequestResponsePairs[0].RequestMatcher.DeprecatedQuery).To(HaveLen(0))
+	Expect(simulation.RequestResponsePairs[0].RequestMatcher.Scheme).To(HaveLen(0))
 
 	Expect(simulation.RequestResponsePairs[0].Response.Body).To(Equal("exact match"))
 	Expect(simulation.RequestResponsePairs[0].Response.EncodedBody).To(BeFalse())
@@ -214,10 +235,10 @@ func Test_NewSimulationViewFromResponseBody_CanCreateSimulationFromV1Payload(t *
 	Expect(simulation.TimeExported).To(Equal("2017-02-23T12:43:48Z"))
 }
 
-func Test_NewSimulationViewFromResponseBody_WontCreateSimulationFromInvalidV1Simulation(t *testing.T) {
+func Test_NewSimulationViewFromRequestBody_WontCreateSimulationFromInvalidV1Simulation(t *testing.T) {
 	RegisterTestingT(t)
 
-	simulation, err := v2.NewSimulationViewFromResponseBody([]byte(`{
+	simulation, err := v2.NewSimulationViewFromRequestBody([]byte(`{
 		"data": {
 			"pairs": [
 				{
@@ -233,17 +254,47 @@ func Test_NewSimulationViewFromResponseBody_WontCreateSimulationFromInvalidV1Sim
 	}`))
 
 	Expect(err).ToNot(BeNil())
-	Expect(err.Error()).To(Equal("Invalid v1 simulation: request is required, response is required"))
+	Expect(err.Error()).To(Equal("Invalid v1 simulation: [Error for <request>: request is required; Error for <response>: response is required]"))
 
 	Expect(simulation).ToNot(BeNil())
 	Expect(simulation.RequestResponsePairs).To(HaveLen(0))
 	Expect(simulation.GlobalActions.Delays).To(HaveLen(0))
 }
 
-func Test_NewSimulationViewFromResponseBody_WontCreateSimulationFromUnknownSchemaVersion(t *testing.T) {
+
+func Test_NewSimulationViewFromRequestBody_ReturnErrorMessagesOnInvalidSimulation(t *testing.T) {
 	RegisterTestingT(t)
 
-	_, err := v2.NewSimulationViewFromResponseBody([]byte(`{
+	simulation, err := v2.NewSimulationViewFromRequestBody([]byte(`{
+	"data": {
+		"pairs": [
+			{
+				"request": [],
+				"response": []
+			
+			}
+		],
+		"globalActions": {
+			"delays": []
+		}
+	},
+	"meta": {
+		"schemaVersion": "v4"
+	}
+}`))
+
+	Expect(err).ToNot(BeNil())
+	Expect(err.Error()).To(MatchRegexp(`Invalid v4 simulation: \[Error for <data.pairs.0.request|response>: Invalid type. Expected: object, given: array; Error for <data.pairs.0.response|request>: Invalid type. Expected: object, given: array\]`))
+
+	Expect(simulation).ToNot(BeNil())
+	Expect(simulation.RequestResponsePairs).To(HaveLen(0))
+	Expect(simulation.GlobalActions.Delays).To(HaveLen(0))
+}
+
+func Test_NewSimulationViewFromRequestBody_WontCreateSimulationFromUnknownSchemaVersion(t *testing.T) {
+	RegisterTestingT(t)
+
+	_, err := v2.NewSimulationViewFromRequestBody([]byte(`{
 		"data": {
 			"pairs": [
 				{
@@ -262,10 +313,10 @@ func Test_NewSimulationViewFromResponseBody_WontCreateSimulationFromUnknownSchem
 	Expect(err.Error()).To(Equal("Invalid simulation: schema version r3 is not supported by this version of Hoverfly, you may need to update Hoverfly"))
 }
 
-func Test_NewSimulationViewFromResponseBody_WontCreateSimulationFromInvalidJson(t *testing.T) {
+func Test_NewSimulationViewFromRequestBody_WontCreateSimulationFromInvalidJson(t *testing.T) {
 	RegisterTestingT(t)
 
-	simulation, err := v2.NewSimulationViewFromResponseBody([]byte(`{}{}[^.^]{}{}`))
+	simulation, err := v2.NewSimulationViewFromRequestBody([]byte(`{}{}[^.^]{}{}`))
 
 	Expect(err).ToNot(BeNil())
 	Expect(err.Error()).To(Equal("Invalid JSON"))
@@ -273,4 +324,31 @@ func Test_NewSimulationViewFromResponseBody_WontCreateSimulationFromInvalidJson(
 	Expect(simulation).ToNot(BeNil())
 	Expect(simulation.RequestResponsePairs).To(HaveLen(0))
 	Expect(simulation.GlobalActions.Delays).To(HaveLen(0))
+	Expect(simulation.GlobalActions.DelaysLogNormal).To(HaveLen(0))
+}
+
+func Test_SimulationImportResult_AddDeprecatedQueryWarning_AddsWarning(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := v2.SimulationImportResult{}
+	unit.AddDeprecatedQueryWarning(15)
+
+	Expect(unit.WarningMessages).To(HaveLen(1))
+
+	Expect(unit.WarningMessages[0].Message).To(ContainSubstring("WARNING"))
+	Expect(unit.WarningMessages[0].Message).To(ContainSubstring("deprecatedQuery"))
+	Expect(unit.WarningMessages[0].Message).To(ContainSubstring("data.pairs[15].request.deprecatedQuery"))
+}
+
+func Test_SimulationImportResult_WriteResponse_IncludesMultipleWarnings(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := v2.SimulationImportResult{}
+	unit.AddDeprecatedQueryWarning(15)
+	unit.AddDeprecatedQueryWarning(30)
+	unit.AddDeprecatedQueryWarning(45)
+
+	Expect(unit.WarningMessages[0].Message).To(ContainSubstring("data.pairs[15].request.deprecatedQuery"))
+	Expect(unit.WarningMessages[1].Message).To(ContainSubstring("data.pairs[30].request.deprecatedQuery"))
+	Expect(unit.WarningMessages[2].Message).To(ContainSubstring("data.pairs[45].request.deprecatedQuery"))
 }

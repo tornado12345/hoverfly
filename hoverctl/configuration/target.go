@@ -9,9 +9,9 @@ import (
 type Target struct {
 	Name      string
 	Host      string `yaml:"host,omitempty"`
-	AdminPort int    `yaml:"admin.port,omitempty"`
-	ProxyPort int    `yaml:"proxy.port,omitempty"`
-	AuthToken string `yaml:"auth.token,omitempty"`
+	AdminPort int    `mapstructure:"admin.port,omitempty" yaml:"admin.port,omitempty"`
+	ProxyPort int    `mapstructure:"proxy.port,omitempty" yaml:"proxy.port,omitempty"`
+	AuthToken string `mapstructure:"auth.token,omitempty" yaml:"auth.token,omitempty"`
 	Pid       int    `yaml:"pid,omitempty"`
 
 	Webserver    bool   `yaml:",omitempty"`
@@ -24,7 +24,13 @@ type Target struct {
 	DisableTls      bool   `yaml:",omitempty"`
 
 	UpstreamProxyUrl string `yaml:",omitempty"`
+	PACFile          string `yaml:",omitempty"`
 	HttpsOnly        bool   `yaml:",omitempty"`
+
+	ClientAuthenticationDestination string `yaml:",omitempty"`
+	ClientAuthenticationClientCert  string `yaml:",omitempty"`
+	ClientAuthenticationClientKey   string `yaml:",omitempty"`
+	ClientAuthenticationCACert      string `yaml:",omitempty"`
 
 	AuthEnabled bool
 	Username    string
@@ -59,43 +65,6 @@ func NewTarget(name, host string, adminPort, proxyPort int) *Target {
 	}
 
 	return target
-}
-
-func getTargetsFromConfig(configTargets map[string]interface{}) map[string]Target {
-	targets := map[string]Target{}
-
-	for key, target := range configTargets {
-		targetMap := target.(map[interface{}]interface{})
-
-		targetHoverfly := Target{}
-
-		targetHoverfly.Name = key
-
-		if targetMap["host"] != nil {
-			targetHoverfly.Host = targetMap["host"].(string)
-		}
-
-		if targetMap["admin.port"] != nil {
-			targetHoverfly.AdminPort = targetMap["admin.port"].(int)
-		}
-
-		if targetMap["proxy.port"] != nil {
-			targetHoverfly.ProxyPort = targetMap["proxy.port"].(int)
-		}
-
-		if targetMap["auth.token"] != nil {
-			targetHoverfly.AuthToken = targetMap["auth.token"].(string)
-		}
-
-		targets[key] = targetHoverfly
-	}
-
-	if targets["local"] == (Target{}) {
-		localTarget := NewDefaultTarget()
-		targets["local"] = *localTarget
-	}
-
-	return targets
 }
 
 func (this Target) BuildFlags() Flags {
@@ -148,6 +117,22 @@ func (this Target) BuildFlags() Flags {
 	if this.AuthEnabled {
 		hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(this.Password), 10)
 		flags = append(flags, "-auth", "-username", this.Username, "-password-hash", string(hashedPassword))
+	}
+
+	if this.ClientAuthenticationDestination != "" {
+		flags = append(flags, "-client-authentication-destination="+this.ClientAuthenticationDestination)
+	}
+
+	if this.ClientAuthenticationClientCert != "" {
+		flags = append(flags, "-client-authentication-client-cert="+this.ClientAuthenticationClientCert)
+	}
+
+	if this.ClientAuthenticationClientKey != "" {
+		flags = append(flags, "-client-authentication-client-key="+this.ClientAuthenticationClientKey)
+	}
+
+	if this.ClientAuthenticationCACert != "" {
+		flags = append(flags, "-client-authentication-ca-cert="+this.ClientAuthenticationCACert)
 	}
 
 	return flags

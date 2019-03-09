@@ -43,6 +43,11 @@ requests.db
 *.iml
 target
 
+# Vim
+*.swp
+*.swo
+*.out
+
 core/cmd/hoverfly/hoverfly
 hoverctl/hoverctl
 functional-tests/core/bin/hoverfly

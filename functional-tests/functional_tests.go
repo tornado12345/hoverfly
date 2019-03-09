@@ -28,6 +28,7 @@ import (
 
 var HoverflyUsername = "benjih"
 var HoverflyPassword = "password"
+var BinaryPrefix = ""
 
 func DoRequest(r *sling.Sling) *http.Response {
 	response, err := doRequest(r)
@@ -46,6 +47,16 @@ func doRequest(r *sling.Sling) (*http.Response, error) {
 	}
 
 	return response, nil
+}
+
+func Unmarshal(data []byte, to interface{}) {
+	Expect(json.Unmarshal(data, to)).To(BeNil())
+}
+
+func UnmarshalFromResponse(res *http.Response, to interface{}) {
+	responseJson, err := ioutil.ReadAll(res.Body)
+	Expect(err).To(BeNil())
+	Unmarshal(responseJson, to)
 }
 
 type Hoverfly struct {
@@ -94,7 +105,7 @@ func (this Hoverfly) StopAPIAuthenticated(username, password string) {
 
 func (this Hoverfly) DeleteBoltDb() {
 	workingDirectory, _ := os.Getwd()
-	os.Remove(workingDirectory + "requests.db")
+	Expect(os.Remove(workingDirectory + "requests.db")).To(BeNil())
 }
 
 func (this Hoverfly) GetMode() *v2.ModeView {
@@ -104,7 +115,8 @@ func (this Hoverfly) GetMode() *v2.ModeView {
 	body, err := ioutil.ReadAll(resp.Body)
 	Expect(err).To(BeNil())
 
-	json.Unmarshal(body, currentState)
+	err = json.Unmarshal(body, currentState)
+	Expect(err).To(BeNil())
 
 	return currentState
 }
@@ -148,7 +160,7 @@ func (this Hoverfly) GetSimulation() io.Reader {
 func (this Hoverfly) ImportSimulation(simulation string) {
 	req := sling.New().Put(this.adminUrl + "/api/v2/simulation").Body(bytes.NewBufferString(simulation))
 	response := DoRequest(req)
-	Expect(response.StatusCode).To(Equal(http.StatusOK))
+	Expect(response.StatusCode).To(Equal(http.StatusOK), "Failed to import simulation")
 	importedSimulationBytes, err := ioutil.ReadAll(response.Body)
 	Expect(err).To(BeNil())
 	ginkgo.GinkgoWriter.Write(importedSimulationBytes)
@@ -165,12 +177,12 @@ func (this Hoverfly) WriteLogsIfError() {
 	ginkgo.GinkgoWriter.Write(logs) // Only writes when test fails
 }
 
-func (this Hoverfly) ExportSimulation() v2.SimulationViewV4 {
+func (this Hoverfly) ExportSimulation() v2.SimulationViewV5 {
 	reader := this.GetSimulation()
 	simulationBytes, err := ioutil.ReadAll(reader)
 	Expect(err).To(BeNil())
 
-	var simulation v2.SimulationViewV4
+	var simulation v2.SimulationViewV5
 
 	err = json.Unmarshal(simulationBytes, &simulation)
 	Expect(err).To(BeNil())
@@ -208,6 +220,14 @@ func (this Hoverfly) FlushCache() v2.CacheView {
 	Expect(err).To(BeNil())
 
 	return cache
+}
+
+func (this Hoverfly) SetPACFile(pacFile string) {
+	req := sling.New().Put(this.adminUrl + "/api/v2/hoverfly/pac").Body(bytes.NewBufferString(pacFile))
+	response := DoRequest(req)
+	Expect(response.StatusCode).To(Equal(http.StatusOK), "Failed to set PAC file")
+	_, err := ioutil.ReadAll(response.Body)
+	Expect(err).To(BeNil())
 }
 
 func (this Hoverfly) Proxy(r *sling.Sling) *http.Response {
@@ -326,12 +346,13 @@ func (this Hoverfly) startHoverflyInternal(adminPort, proxyPort int, additionalC
 
 func BuildBinaryPath() string {
 	workingDirectory, _ := os.Getwd()
-	return filepath.Join(workingDirectory, "bin/hoverfly")
+	return filepath.Join(workingDirectory, BinaryPrefix, "bin/hoverfly")
 }
 
 func BinaryErrorCheck(err error, binaryPath string) {
 	if err != nil {
 		fmt.Println("Unable to start Hoverfly")
+		fmt.Println(os.Getwd())
 		fmt.Println(binaryPath)
 		fmt.Println("Is the binary there?")
 		os.Exit(1)

@@ -1,240 +1,162 @@
 package matching_test
 
 import (
-	"encoding/xml"
 	"testing"
 
 	"github.com/SpectoLabs/hoverfly/core/matching"
+	"github.com/SpectoLabs/hoverfly/core/matching/matchers"
 	"github.com/SpectoLabs/hoverfly/core/models"
-	"github.com/SpectoLabs/hoverfly/core/util"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/types"
 )
 
-func Test_CountlessFieldMatcher_MatchesTrue_WithNilMatchers(t *testing.T) {
-	RegisterTestingT(t)
-
-	Expect(matching.UnscoredFieldMatcher(nil, "test").Matched).To(BeTrue())
+type fieldMatcherTest struct {
+	name        string
+	matchers    []models.RequestFieldMatchers
+	toMatch     string
+	equals      types.GomegaMatcher
+	scoreEquals types.GomegaMatcher
 }
 
-func Test_CountlessFieldMatcher_MatchesTrueWithJsonMatch(t *testing.T) {
-	RegisterTestingT(t)
-
-	Expect(matching.UnscoredFieldMatcher(&models.RequestFieldMatchers{
-		JsonMatch: util.StringToPointer(`{"test":true}`),
-	}, `{"test": true}`).Matched).To(BeTrue())
-}
-
-func Test_CountlessFieldMatcher_MatchesFalseWithJsonMatch(t *testing.T) {
-	RegisterTestingT(t)
-
-	Expect(matching.UnscoredFieldMatcher(&models.RequestFieldMatchers{
-		JsonMatch: util.StringToPointer(`{"test":true}`),
-	}, `{"test": [ ] }`).Matched).To(BeFalse())
-}
-
-func Test_CountlessFieldMatcher_MatchesTrueWithXmlMatch(t *testing.T) {
-	RegisterTestingT(t)
-
-	Expect(matching.UnscoredFieldMatcher(&models.RequestFieldMatchers{
-		XmlMatch: util.StringToPointer(`<document></document>`),
-	}, `<document></document>`).Matched).To(BeTrue())
-}
-
-func Test_CountlessFieldMatcher_MatchesFalseWithXmlMatch(t *testing.T) {
-	RegisterTestingT(t)
-
-	Expect(matching.UnscoredFieldMatcher(&models.RequestFieldMatchers{
-		XmlMatch: util.StringToPointer(`<document></document>`),
-	}, `<document>
+var fieldMatcherTests = []fieldMatcherTest{
+	{
+		name:        "MatchesTrue_WithNilMatchers",
+		matchers:    nil,
+		toMatch:     "test",
+		equals:      BeTrue(),
+		scoreEquals: Equal(0),
+	},
+	{
+		name: "MatchesTrueWithDefaultMatcherWhichIsExactMatch",
+		matchers: []models.RequestFieldMatchers{
+			{
+				Value: `test`,
+			},
+		},
+		toMatch: "test",
+		equals:  BeTrue(),
+	},
+	{
+		name: "MatchesTrueWithJsonMatch",
+		matchers: []models.RequestFieldMatchers{
+			{
+				Matcher: matchers.Json,
+				Value:   `{"test":true}`,
+			},
+		},
+		toMatch: `{"test":true}`,
+		equals:  BeTrue(),
+	},
+	{
+		name: "MatchesFalseWithJsonMatch",
+		matchers: []models.RequestFieldMatchers{
+			{
+				Matcher: matchers.Json,
+				Value:   `{"test":true}`,
+			},
+		},
+		toMatch: "test",
+		equals:  BeFalse(),
+	},
+	{
+		name: "MatchesTrueWithXmlMatch",
+		matchers: []models.RequestFieldMatchers{
+			{
+				Matcher: matchers.Xml,
+				Value:   `<document></document>`,
+			},
+		},
+		toMatch: `<document></document>`,
+		equals:  BeTrue(),
+	},
+	{
+		name: "MatchesFalseWithXmlMatch",
+		matchers: []models.RequestFieldMatchers{
+			{
+				Matcher: matchers.Xml,
+				Value:   "<document></document>",
+			},
+		},
+		toMatch: `<document>
 		<test>data</test>
-	</document>`).Matched).To(BeFalse())
+	</document>`,
+		equals: BeFalse(),
+	},
+	{
+		name:     "MatchesTrue_WithMatchersNotDefined",
+		matchers: []models.RequestFieldMatchers{},
+		toMatch:  "test",
+		equals:   BeTrue(),
+	},
+	{
+		name: "WithExactMatch_ScoresDouble(",
+		matchers: []models.RequestFieldMatchers{
+			{
+				Matcher: matchers.Exact,
+				Value:   "test",
+			},
+		},
+		toMatch:     "test",
+		scoreEquals: Equal(2),
+	},
+	{
+		name: "WithMultipleMatchers_MatchesOnBoth",
+		matchers: []models.RequestFieldMatchers{
+			{
+				Matcher: matchers.Exact,
+				Value:   "test",
+			},
+			{
+				Matcher: matchers.Exact,
+				Value:   "test",
+			},
+		},
+		toMatch: "test",
+		equals:  BeTrue(),
+	},
+	{
+		name: "WithMultipleMatchers_MatchesOne",
+		matchers: []models.RequestFieldMatchers{
+			{
+				Matcher: matchers.Exact,
+				Value:   "test",
+			},
+			{
+				Matcher: matchers.Exact,
+				Value:   "nottest",
+			},
+		},
+		toMatch: "test",
+		equals:  BeFalse(),
+	},
+	{
+		name: "FieldMatcher_WithMultipleMatchers_ScoresDouble",
+		matchers: []models.RequestFieldMatchers{
+			{
+				Matcher: matchers.Exact,
+				Value:   "test",
+			},
+			{
+				Matcher: matchers.Exact,
+				Value:   "test",
+			},
+		},
+		toMatch:     "test",
+		scoreEquals: Equal(4),
+	},
 }
 
-func Test_CountlessFieldMatcher_MatchesTrue_WithMatchersNotDefined(t *testing.T) {
+func Test_FieldMatcher(t *testing.T) {
 	RegisterTestingT(t)
 
-	Expect(matching.UnscoredFieldMatcher(&models.RequestFieldMatchers{}, "test").Matched).To(BeTrue())
-}
+	for _, test := range fieldMatcherTests {
+		result := matching.FieldMatcher(test.matchers, test.toMatch)
+		if test.equals != nil {
+			Expect(result.Matched).To(test.equals, test.name)
+		}
+		if test.scoreEquals != nil {
+			Expect(result.Score).To(test.scoreEquals, test.name)
+		}
+	}
 
-func Test_CountlessFieldMatcher_WithMultipleMatchers_MatchesTrue(t *testing.T) {
-	RegisterTestingT(t)
-
-	Expect(matching.UnscoredFieldMatcher(&models.RequestFieldMatchers{
-		ExactMatch: util.StringToPointer("testtesttest"),
-		RegexMatch: util.StringToPointer("test"),
-	}, `testtesttest`).Matched).To(BeTrue())
-}
-
-func Test_CountlessFieldMatcher_WithMultipleMatchers_AlsoMatchesTrue(t *testing.T) {
-	RegisterTestingT(t)
-
-	Expect(matching.UnscoredFieldMatcher(&models.RequestFieldMatchers{
-		XpathMatch: util.StringToPointer("/list/item[1]/field"),
-		RegexMatch: util.StringToPointer("test"),
-	}, xml.Header+"<list><item><field>test</field></item></list>").Matched).To(BeTrue())
-}
-
-func Test_CountlessFieldMatcher_WithMultipleMatchers_MatchesFalse(t *testing.T) {
-	RegisterTestingT(t)
-
-	Expect(matching.UnscoredFieldMatcher(&models.RequestFieldMatchers{
-		ExactMatch: util.StringToPointer("testtesttest"),
-		RegexMatch: util.StringToPointer("tst"),
-	}, `testtesttest`).Matched).To(BeFalse())
-}
-
-func Test_CountlessFieldMatcher__WithMultipleMatchers_AlsoMatchesFalse(t *testing.T) {
-	RegisterTestingT(t)
-
-	Expect(matching.UnscoredFieldMatcher(&models.RequestFieldMatchers{
-		GlobMatch:     util.StringToPointer("*test"),
-		JsonPathMatch: util.StringToPointer("$.test[1]"),
-	}, `testtesttest`).Matched).To(BeFalse())
-}
-
-func Test_ScoredFieldMatcher_MatchesTrue_WithNilMatchers(t *testing.T) {
-	RegisterTestingT(t)
-
-	Expect(matching.ScoredFieldMatcher(nil, "test").Matched).To(BeTrue())
-}
-
-func Test_ScoredFieldMatcher_MatchesTrueWithJsonMatch(t *testing.T) {
-	RegisterTestingT(t)
-
-	Expect(matching.ScoredFieldMatcher(&models.RequestFieldMatchers{
-		JsonMatch: util.StringToPointer(`{"test":true}`),
-	}, `{"test": true}`).Matched).To(BeTrue())
-}
-
-func Test_ScoredFieldMatcher_MatchesFalseWithJsonMatch(t *testing.T) {
-	RegisterTestingT(t)
-
-	Expect(matching.ScoredFieldMatcher(&models.RequestFieldMatchers{
-		JsonMatch: util.StringToPointer(`{"test":true}`),
-	}, `{"test": [ ] }`).Matched).To(BeFalse())
-}
-
-func Test_ScoredFieldMatcher_MatchesTrueWithXmlMatch(t *testing.T) {
-	RegisterTestingT(t)
-
-	Expect(matching.ScoredFieldMatcher(&models.RequestFieldMatchers{
-		XmlMatch: util.StringToPointer(`<document></document>`),
-	}, `<document></document>`).Matched).To(BeTrue())
-}
-
-func Test_ScoredFieldMatcher_MatchesFalseWithXmlMatch(t *testing.T) {
-	RegisterTestingT(t)
-
-	Expect(matching.ScoredFieldMatcher(&models.RequestFieldMatchers{
-		XmlMatch: util.StringToPointer(`<document></document>`),
-	}, `<document>
-		<test>data</test>
-	</document>`).Matched).To(BeFalse())
-}
-
-func Test_ScoredFieldMatcher_MatchesTrue_WithMatchersNotDefined(t *testing.T) {
-	RegisterTestingT(t)
-
-	Expect(matching.ScoredFieldMatcher(&models.RequestFieldMatchers{}, "test").Matched).To(BeTrue())
-}
-
-func Test_ScoredFieldMatcher_WithMultipleMatchers_MatchesTrue(t *testing.T) {
-	RegisterTestingT(t)
-
-	Expect(matching.ScoredFieldMatcher(&models.RequestFieldMatchers{
-		ExactMatch: util.StringToPointer("testtesttest"),
-		RegexMatch: util.StringToPointer("test"),
-	}, `testtesttest`).Matched).To(BeTrue())
-}
-
-func Test_ScoredFieldMatcher_WithExactMatch_ScoresDouble(t *testing.T) {
-	RegisterTestingT(t)
-
-	Expect(matching.ScoredFieldMatcher(&models.RequestFieldMatchers{
-		ExactMatch: util.StringToPointer("testtesttest"),
-	}, `testtesttest`).MatchScore).To(Equal(2))
-}
-
-func Test_ScoredFieldMatcher_WithMultipleMatchers_AlsoMatchesTrue(t *testing.T) {
-	RegisterTestingT(t)
-
-	Expect(matching.ScoredFieldMatcher(&models.RequestFieldMatchers{
-		XpathMatch: util.StringToPointer("/list/item[1]/field"),
-		RegexMatch: util.StringToPointer("test"),
-	}, xml.Header+"<list><item><field>test</field></item></list>").Matched).To(BeTrue())
-}
-
-func Test_ScoredFieldMatcher_WithMultipleMatchers_MatchesFalse(t *testing.T) {
-	RegisterTestingT(t)
-
-	Expect(matching.ScoredFieldMatcher(&models.RequestFieldMatchers{
-		ExactMatch: util.StringToPointer("testtesttest"),
-		RegexMatch: util.StringToPointer("tst"),
-	}, `testtesttest`).Matched).To(BeFalse())
-}
-
-func Test_ScoredFieldMatcher__WithMultipleMatchers_AlsoMatchesFalse(t *testing.T) {
-	RegisterTestingT(t)
-
-	Expect(matching.ScoredFieldMatcher(&models.RequestFieldMatchers{
-		GlobMatch:     util.StringToPointer("*test"),
-		JsonPathMatch: util.StringToPointer("$.test[1]"),
-	}, `testtesttest`).Matched).To(BeFalse())
-}
-
-func Test_ScoredFieldMatcher_CountsMatches_WhenThereIsAMatch(t *testing.T) {
-	RegisterTestingT(t)
-
-	// Glob, regex, and exact
-	matcher := matching.ScoredFieldMatcher(&models.RequestFieldMatchers{
-		GlobMatch:  util.StringToPointer("*test"),
-		RegexMatch: util.StringToPointer(".*"),
-		ExactMatch: util.StringToPointer("testtesttest"),
-	}, `testtesttest`)
-
-	Expect(matcher.Matched).To(BeTrue())
-	Expect(matcher.MatchScore).To(Equal(4))
-
-	// JSON and JSONPath
-	matcher = matching.ScoredFieldMatcher(&models.RequestFieldMatchers{
-		JsonMatch:     util.StringToPointer(`{"test":true}`),
-		JsonPathMatch: util.StringToPointer(`$.test`),
-	}, `{"test":true}`)
-
-	Expect(matcher.Matched).To(BeTrue())
-	Expect(matcher.MatchScore).To(Equal(2))
-
-	// XML and XMLPath
-	matcher = matching.ScoredFieldMatcher(&models.RequestFieldMatchers{
-		XmlMatch:   util.StringToPointer(xml.Header + "<list><item><field>test</field></item></list>"),
-		XpathMatch: util.StringToPointer(`/list/item[1]/field`),
-	}, xml.Header+"<list><item><field>test</field></item></list>")
-
-	Expect(matcher.Matched).To(BeTrue())
-	Expect(matcher.MatchScore).To(Equal(2))
-}
-
-func Test_ScoredFieldMatcher_CountsMatches_WhenThereIsNoMatch(t *testing.T) {
-	RegisterTestingT(t)
-
-	// Glob, regex, and exact
-	matcher := matching.ScoredFieldMatcher(&models.RequestFieldMatchers{
-		GlobMatch:     util.StringToPointer("*test"),
-		RegexMatch:    util.StringToPointer(".*"),
-		ExactMatch:    util.StringToPointer("testtesttest"),
-		JsonPathMatch: util.StringToPointer(`$.notmatch`),
-	}, `testtesttest`)
-
-	Expect(matcher.Matched).To(BeFalse())
-	Expect(matcher.MatchScore).To(Equal(4))
-}
-
-func Test_ScoredFieldMatcher_CountZero_WhenFieldIsNil(t *testing.T) {
-	RegisterTestingT(t)
-
-	// Glob, regex, and exact
-	matcher := matching.ScoredFieldMatcher(nil, `testtesttest`)
-
-	Expect(matcher.Matched).To(BeTrue())
-	Expect(matcher.MatchScore).To(Equal(0))
 }

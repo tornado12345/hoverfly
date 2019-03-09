@@ -10,35 +10,35 @@ import (
 	"fmt"
 
 	"github.com/SpectoLabs/hoverfly/core/handlers/v1"
-	"github.com/SpectoLabs/hoverfly/core/util"
+	"github.com/SpectoLabs/hoverfly/core/matching/matchers"
 	. "github.com/onsi/gomega"
 )
 
 type HoverflySimulationStub struct {
 	Deleted    bool
-	Simulation SimulationViewV4
+	Simulation SimulationViewV5
 	UrlPattern string
 	Filtered   bool
 }
 
-func (this HoverflySimulationStub) GetSimulation() (SimulationViewV4, error) {
-	pairOne := RequestMatcherResponsePairViewV4{
-		RequestMatcher: RequestMatcherViewV4{
-			Destination: &RequestFieldMatchersView{
-				ExactMatch: util.StringToPointer("test.com"),
+func (this HoverflySimulationStub) GetSimulation() (SimulationViewV5, error) {
+	pairOne := RequestMatcherResponsePairViewV5{
+		RequestMatcher: RequestMatcherViewV5{
+			Destination: []MatcherViewV5{
+				NewMatcherView(matchers.Exact, "test.com"),
 			},
-			Path: &RequestFieldMatchersView{
-				ExactMatch: util.StringToPointer("/testing"),
+			Path: []MatcherViewV5{
+				NewMatcherView(matchers.Exact, "/testing"),
 			},
 		},
-		Response: ResponseDetailsViewV4{
+		Response: ResponseDetailsViewV5{
 			Body: "test-body",
 		},
 	}
 
-	return SimulationViewV4{
-		DataViewV4{
-			RequestResponsePairs: []RequestMatcherResponsePairViewV4{pairOne},
+	return SimulationViewV5{
+		DataViewV5{
+			RequestResponsePairs: []RequestMatcherResponsePairViewV5{pairOne},
 			GlobalActions: GlobalActionsView{
 				Delays: []v1.ResponseDelayView{
 					{
@@ -56,7 +56,7 @@ func (this HoverflySimulationStub) GetSimulation() (SimulationViewV4, error) {
 	}, nil
 }
 
-func (this *HoverflySimulationStub) GetFilteredSimulation(urlPattern string) (SimulationViewV4, error) {
+func (this *HoverflySimulationStub) GetFilteredSimulation(urlPattern string) (SimulationViewV5, error) {
 	this.Filtered = true
 	this.UrlPattern = urlPattern
 	return this.GetSimulation()
@@ -66,27 +66,45 @@ func (this *HoverflySimulationStub) DeleteSimulation() {
 	this.Deleted = true
 }
 
-func (this *HoverflySimulationStub) PutSimulation(simulation SimulationViewV4) error {
+func (this *HoverflySimulationStub) PutSimulation(simulation SimulationViewV5) SimulationImportResult {
 	this.Simulation = simulation
-	return nil
+	return SimulationImportResult{}
 }
 
 type HoverflySimulationErrorStub struct{}
 
-func (this HoverflySimulationErrorStub) GetSimulation() (SimulationViewV4, error) {
-	return SimulationViewV4{}, fmt.Errorf("error")
+func (this HoverflySimulationErrorStub) GetSimulation() (SimulationViewV5, error) {
+	return SimulationViewV5{}, fmt.Errorf("error")
 }
 
-func (this HoverflySimulationErrorStub) GetFilteredSimulation(urlPattern string) (SimulationViewV4, error) {
-	return SimulationViewV4{}, fmt.Errorf("error")
+func (this HoverflySimulationErrorStub) GetFilteredSimulation(urlPattern string) (SimulationViewV5, error) {
+	return SimulationViewV5{}, fmt.Errorf("error")
 }
 
 func (this *HoverflySimulationErrorStub) DeleteSimulation() {}
 
-func (this *HoverflySimulationErrorStub) PutSimulation(simulation SimulationViewV4) error {
-	indent, _ := json.MarshalIndent(simulation, "", "    ")
-	fmt.Println(string(indent))
-	return fmt.Errorf("error")
+func (this *HoverflySimulationErrorStub) PutSimulation(simulation SimulationViewV5) SimulationImportResult {
+	return SimulationImportResult{
+		err: fmt.Errorf("error"),
+	}
+}
+
+type HoverflySimulationWarningStub struct{}
+
+func (this HoverflySimulationWarningStub) GetSimulation() (SimulationViewV5, error) {
+	return SimulationViewV5{}, fmt.Errorf("error")
+}
+
+func (this HoverflySimulationWarningStub) GetFilteredSimulation(urlPattern string) (SimulationViewV5, error) {
+	return SimulationViewV5{}, fmt.Errorf("error")
+}
+
+func (this *HoverflySimulationWarningStub) DeleteSimulation() {}
+
+func (this *HoverflySimulationWarningStub) PutSimulation(simulation SimulationViewV5) SimulationImportResult {
+	return SimulationImportResult{
+		WarningMessages: []SimulationImportWarning{{"This is a warning", "url"}},
+	}
 }
 
 func TestSimulationHandler_Get_ReturnsSimulation(t *testing.T) {
@@ -102,19 +120,22 @@ func TestSimulationHandler_Get_ReturnsSimulation(t *testing.T) {
 
 	Expect(response.Code).To(Equal(http.StatusOK))
 
-	simulationView, err := unmarshalSimulationViewV3(response.Body)
+	simulationView, err := unmarshalSimulationViewV5(response.Body)
 	Expect(err).To(BeNil())
 
-	Expect(simulationView.DataViewV4.RequestResponsePairs).To(HaveLen(1))
+	Expect(simulationView.DataViewV5.RequestResponsePairs).To(HaveLen(1))
 
-	Expect(simulationView.DataViewV4.RequestResponsePairs[0].RequestMatcher.Destination.ExactMatch).To(Equal(util.StringToPointer("test.com")))
-	Expect(simulationView.DataViewV4.RequestResponsePairs[0].RequestMatcher.Path.ExactMatch).To(Equal(util.StringToPointer("/testing")))
+	Expect(simulationView.DataViewV5.RequestResponsePairs[0].RequestMatcher.Destination[0].Matcher).To(Equal("exact"))
+	Expect(simulationView.DataViewV5.RequestResponsePairs[0].RequestMatcher.Destination[0].Value).To(Equal("test.com"))
 
-	Expect(simulationView.DataViewV4.RequestResponsePairs[0].Response.Body).To(Equal("test-body"))
+	Expect(simulationView.DataViewV5.RequestResponsePairs[0].RequestMatcher.Path[0].Matcher).To(Equal("exact"))
+	Expect(simulationView.DataViewV5.RequestResponsePairs[0].RequestMatcher.Path[0].Value).To(Equal("/testing"))
 
-	Expect(simulationView.DataViewV4.GlobalActions.Delays).To(HaveLen(1))
-	Expect(simulationView.DataViewV4.GlobalActions.Delays[0].HttpMethod).To(Equal("GET"))
-	Expect(simulationView.DataViewV4.GlobalActions.Delays[0].Delay).To(Equal(100))
+	Expect(simulationView.DataViewV5.RequestResponsePairs[0].Response.Body).To(Equal("test-body"))
+
+	Expect(simulationView.DataViewV5.GlobalActions.Delays).To(HaveLen(1))
+	Expect(simulationView.DataViewV5.GlobalActions.Delays[0].HttpMethod).To(Equal("GET"))
+	Expect(simulationView.DataViewV5.GlobalActions.Delays[0].Delay).To(Equal(100))
 
 	Expect(simulationView.MetaView.SchemaVersion).To(Equal("v3"))
 	Expect(simulationView.MetaView.HoverflyVersion).To(Equal("test"))
@@ -153,10 +174,10 @@ func TestSimulationHandler_Get_WithEmptyUrlPatternShouldNotFilterSimulation(t *t
 
 	Expect(response.Code).To(Equal(http.StatusOK))
 
-	simulationView, err := unmarshalSimulationViewV3(response.Body)
+	simulationView, err := unmarshalSimulationViewV5(response.Body)
 	Expect(err).To(BeNil())
 
-	Expect(simulationView.DataViewV4.RequestResponsePairs).To(HaveLen(1))
+	Expect(simulationView.DataViewV5.RequestResponsePairs).To(HaveLen(1))
 	Expect(stubHoverfly.Filtered).To(BeFalse())
 }
 
@@ -173,10 +194,10 @@ func TestSimulationHandler_Get_WithUrlPatternShouldFilterSimulation(t *testing.T
 
 	Expect(response.Code).To(Equal(http.StatusOK))
 
-	simulationView, err := unmarshalSimulationViewV3(response.Body)
+	simulationView, err := unmarshalSimulationViewV5(response.Body)
 	Expect(err).To(BeNil())
 
-	Expect(simulationView.DataViewV4.RequestResponsePairs).To(HaveLen(1))
+	Expect(simulationView.DataViewV5.RequestResponsePairs).To(HaveLen(1))
 	Expect(stubHoverfly.Filtered).To(BeTrue())
 	Expect(stubHoverfly.UrlPattern).To(Equal("foo.com"))
 }
@@ -209,19 +230,22 @@ func TestSimulationHandler_Delete_CallsGetAfterDelete(t *testing.T) {
 
 	response := makeRequestOnHandler(unit.Delete, request)
 
-	simulationView, err := unmarshalSimulationViewV3(response.Body)
+	simulationView, err := unmarshalSimulationViewV5(response.Body)
 	Expect(err).To(BeNil())
 
-	Expect(simulationView.DataViewV4.RequestResponsePairs).To(HaveLen(1))
+	Expect(simulationView.DataViewV5.RequestResponsePairs).To(HaveLen(1))
 
-	Expect(simulationView.DataViewV4.RequestResponsePairs[0].RequestMatcher.Destination.ExactMatch).To(Equal(util.StringToPointer("test.com")))
-	Expect(simulationView.DataViewV4.RequestResponsePairs[0].RequestMatcher.Path.ExactMatch).To(Equal(util.StringToPointer("/testing")))
+	Expect(simulationView.DataViewV5.RequestResponsePairs[0].RequestMatcher.Destination[0].Matcher).To(Equal("exact"))
+	Expect(simulationView.DataViewV5.RequestResponsePairs[0].RequestMatcher.Destination[0].Value).To(Equal("test.com"))
 
-	Expect(simulationView.DataViewV4.RequestResponsePairs[0].Response.Body).To(Equal("test-body"))
+	Expect(simulationView.DataViewV5.RequestResponsePairs[0].RequestMatcher.Path[0].Matcher).To(Equal("exact"))
+	Expect(simulationView.DataViewV5.RequestResponsePairs[0].RequestMatcher.Path[0].Value).To(Equal("/testing"))
 
-	Expect(simulationView.DataViewV4.GlobalActions.Delays).To(HaveLen(1))
-	Expect(simulationView.DataViewV4.GlobalActions.Delays[0].HttpMethod).To(Equal("GET"))
-	Expect(simulationView.DataViewV4.GlobalActions.Delays[0].Delay).To(Equal(100))
+	Expect(simulationView.DataViewV5.RequestResponsePairs[0].Response.Body).To(Equal("test-body"))
+
+	Expect(simulationView.DataViewV5.GlobalActions.Delays).To(HaveLen(1))
+	Expect(simulationView.DataViewV5.GlobalActions.Delays[0].HttpMethod).To(Equal("GET"))
+	Expect(simulationView.DataViewV5.GlobalActions.Delays[0].Delay).To(Equal(100))
 
 	Expect(simulationView.MetaView.SchemaVersion).To(Equal("v3"))
 	Expect(simulationView.MetaView.HoverflyVersion).To(Equal("test"))
@@ -291,7 +315,8 @@ func TestSimulationHandler_Put_PassesDataIntoHoverfly(t *testing.T) {
 	Expect(stubHoverfly.Simulation).ToNot(BeNil())
 	Expect(stubHoverfly.Simulation.RequestResponsePairs).ToNot(BeNil())
 
-	Expect(stubHoverfly.Simulation.RequestResponsePairs[0].RequestMatcher.Destination.ExactMatch).To(Equal(util.StringToPointer("test.org")))
+	Expect(stubHoverfly.Simulation.RequestResponsePairs[0].RequestMatcher.Destination[0].Matcher).To(Equal("exact"))
+	Expect(stubHoverfly.Simulation.RequestResponsePairs[0].RequestMatcher.Destination[0].Value).To(Equal("test.org"))
 	Expect(stubHoverfly.Simulation.RequestResponsePairs[0].Response.Status).To(Equal(200))
 
 	Expect(stubHoverfly.Simulation.GlobalActions.Delays[0].UrlPattern).To(Equal("test.org"))
@@ -360,7 +385,7 @@ func TestSimulationHandler_Put_ReturnsErrorIfJsonDoesntMatchSchema_MissingDataKe
 	Expect(err).To(BeNil())
 
 	Expect(response.Result().StatusCode).To(Equal(400))
-	Expect(errorView.Error).To(Equal("Invalid v3 simulation: data is required"))
+	Expect(errorView.Error).To(Equal("Invalid v3 simulation: [Error for <data>: data is required]"))
 }
 
 func TestSimulationHandler_Put_ReturnsErrorIfJsonDoesntMatchSchema_EmptyObject(t *testing.T) {
@@ -401,6 +426,57 @@ func TestSimulationHandler_Put_ReturnsErrorIfJsonIsNotValid(t *testing.T) {
 	Expect(errorView.Error).To(Equal("Invalid JSON"))
 }
 
+func TestSimulationHandler_Put_ReturnsWarnings(t *testing.T) {
+	RegisterTestingT(t)
+
+	stubHoverfly := &HoverflySimulationWarningStub{}
+
+	unit := SimulationHandler{Hoverfly: stubHoverfly}
+
+	request, err := http.NewRequest("PUT", "", ioutil.NopCloser(bytes.NewBuffer([]byte(`
+		{
+			"data": {
+				"pairs": [
+					{
+						"request": {
+							"destination": {
+								"exactMatch": "test.org"
+							}
+						},
+						"response": {
+							"status": 200
+						}
+					}
+				],
+	
+				"globalActions": {
+					"delays": [
+						{
+							"urlPattern": "test.org",
+							"httpMethod": "GET",
+							"delay": 200
+						}
+					]
+				}
+			},
+			"meta": {
+				"schemaVersion": "v3"
+			}
+		}
+		`))))
+	Expect(err).To(BeNil())
+
+	response := makeRequestOnHandler(unit.Put, request)
+
+	resultView, err := unmarshalResultView(response.Body)
+	Expect(err).To(BeNil())
+
+	Expect(response.Result().StatusCode).To(Equal(http.StatusOK))
+	Expect(resultView.WarningMessages[0].Message).To(Equal("This is a warning"))
+	Expect(resultView.WarningMessages[0].DocsLink).To(Equal("url"))
+
+}
+
 func Test_SimulationHandler_Options_GetsOptions(t *testing.T) {
 	RegisterTestingT(t)
 
@@ -431,18 +507,34 @@ func Test_SimulationHandler_OptionsSchema_GetsOptions(t *testing.T) {
 	Expect(response.Header().Get("Allow")).To(Equal("OPTIONS, GET"))
 }
 
-func unmarshalSimulationViewV3(buffer *bytes.Buffer) (SimulationViewV4, error) {
+func unmarshalSimulationViewV5(buffer *bytes.Buffer) (SimulationViewV5, error) {
 	body, err := ioutil.ReadAll(buffer)
 	if err != nil {
-		return SimulationViewV4{}, err
+		return SimulationViewV5{}, err
 	}
 
-	var simulationView SimulationViewV4
+	var simulationView SimulationViewV5
 
 	err = json.Unmarshal(body, &simulationView)
 	if err != nil {
-		return SimulationViewV4{}, err
+		return SimulationViewV5{}, err
 	}
 
 	return simulationView, nil
+}
+
+func unmarshalResultView(buffer *bytes.Buffer) (SimulationImportResult, error) {
+	body, err := ioutil.ReadAll(buffer)
+	if err != nil {
+		return SimulationImportResult{}, err
+	}
+
+	var result SimulationImportResult
+
+	err = json.Unmarshal(body, &result)
+	if err != nil {
+		return SimulationImportResult{}, err
+	}
+
+	return result, nil
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -29,7 +30,7 @@ func NewProxy(hoverfly *Hoverfly) *goproxy.ProxyHttpServer {
 	// creating proxy
 	proxy := goproxy.NewProxyHttpServer()
 
-	proxy.OnRequest(goproxy.UrlMatches(regexp.MustCompile(hoverfly.Cfg.Destination))).
+	proxy.OnRequest(matchesFilter(hoverfly.Cfg.Destination)).
 		HandleConnect(goproxy.FuncHttpsHandler(func(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
 			if hoverfly.Cfg.PlainHttpTunneling && !strings.HasSuffix(host, ":443") {
 				return goproxy.HTTPMitmConnect, host
@@ -60,7 +61,7 @@ func NewProxy(hoverfly *Hoverfly) *goproxy.ProxyHttpServer {
 	}
 
 	// processing connections
-	proxy.OnRequest(goproxy.UrlMatches(regexp.MustCompile(hoverfly.Cfg.Destination))).DoFunc(
+	proxy.OnRequest(matchesFilter(hoverfly.Cfg.Destination)).DoFunc(
 		func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 			startTime := time.Now()
 			resp := hoverfly.processRequest(r)
@@ -82,18 +83,8 @@ func NewProxy(hoverfly *Hoverfly) *goproxy.ProxyHttpServer {
 			})
 	}
 
-	// Set content length
-	proxy.OnResponse().DoFunc(func(r *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
-		if r.Header.Get("Content-Length") == "" {
-			responseBytes, _ := ioutil.ReadAll(r.Body)
-			r.Header.Set("Content-Length", fmt.Sprintf("%v", len(responseBytes)))
-			r.Body = ioutil.NopCloser(bytes.NewReader(responseBytes))
-		}
-		return r
-	})
-
 	// intercepts response
-	proxy.OnResponse(goproxy.UrlMatches(regexp.MustCompile(hoverfly.Cfg.Destination))).DoFunc(
+	proxy.OnResponse(matchesFilter(hoverfly.Cfg.Destination)).DoFunc(
 		func(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
 			hoverfly.Counter.Count(hoverfly.Cfg.GetMode())
 			return resp
@@ -116,7 +107,6 @@ func NewWebserverProxy(hoverfly *Hoverfly) *goproxy.ProxyHttpServer {
 	// creating proxy
 	proxy := goproxy.NewProxyHttpServer()
 	proxy.NonproxyHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Warn("NonproxyHandler")
 		startTime := time.Now()
 		r.URL.Scheme = "http"
 		resp := hoverfly.processRequest(r)
@@ -139,9 +129,10 @@ func NewWebserverProxy(hoverfly *Hoverfly) *goproxy.ProxyHttpServer {
 
 		w.Header().Set("Req", r.RequestURI)
 		w.Header().Set("Resp", resp.Header.Get("Content-Length"))
-
 		w.WriteHeader(resp.StatusCode)
 		w.Write([]byte(body))
+
+		hoverfly.Counter.Count(hoverfly.Cfg.GetMode())
 	})
 
 	if hoverfly.Cfg.Verbose {
@@ -230,4 +221,29 @@ func authFromHeader(req *http.Request, basicFunc func(user, passwd string) bool,
 	}
 
 	return nil
+}
+
+func matchesFilter(filter string) goproxy.ReqConditionFunc {
+	re := regexp.MustCompile(filter)
+	return func(req *http.Request, ctx *goproxy.ProxyCtx) bool {
+
+		scheme := req.URL.Scheme
+		host := req.Host		// relative URL does not have host value, and this is a safer way to get the hostname from request struct
+		path := req.URL.Path
+
+		if scheme == "https" || strings.Contains(host, ":443") {
+			scheme = "https"
+			host = strings.Replace(host, ":443", "", 1)
+		}
+
+		if req.Method == http.MethodConnect {
+			parsed, _ := url.Parse(filter)
+			re = regexp.MustCompile(parsed.Scheme + "://" + parsed.Host)
+		}
+
+		return re.MatchString(path) ||
+			re.MatchString(host+path) ||
+			re.MatchString(scheme+"://"+host+path)
+
+	}
 }

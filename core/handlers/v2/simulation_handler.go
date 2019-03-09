@@ -15,9 +15,9 @@ import (
 )
 
 type HoverflySimulation interface {
-	GetSimulation() (SimulationViewV4, error)
-	GetFilteredSimulation(string) (SimulationViewV4, error)
-	PutSimulation(SimulationViewV4) error
+	GetSimulation() (SimulationViewV5, error)
+	GetFilteredSimulation(string) (SimulationViewV5, error)
+	PutSimulation(SimulationViewV5) SimulationImportResult
 	DeleteSimulation()
 }
 
@@ -55,7 +55,7 @@ func (this *SimulationHandler) Get(w http.ResponseWriter, req *http.Request, nex
 	urlPattern := req.URL.Query().Get("urlPattern")
 
 	var err error
-	var simulationView SimulationViewV4
+	var simulationView SimulationViewV5
 	if urlPattern == "" {
 		simulationView, err = this.Hoverfly.GetSimulation()
 	} else {
@@ -74,7 +74,7 @@ func (this *SimulationHandler) Get(w http.ResponseWriter, req *http.Request, nex
 func (this *SimulationHandler) Put(w http.ResponseWriter, req *http.Request, next http.HandlerFunc) {
 	body, _ := ioutil.ReadAll(req.Body)
 
-	simulationView, err := NewSimulationViewFromResponseBody(body)
+	simulationView, err := NewSimulationViewFromRequestBody(body)
 	if err != nil {
 		handlers.WriteErrorResponse(w, err.Error(), http.StatusBadRequest)
 		return
@@ -82,14 +82,20 @@ func (this *SimulationHandler) Put(w http.ResponseWriter, req *http.Request, nex
 
 	this.Hoverfly.DeleteSimulation()
 
-	err = this.Hoverfly.PutSimulation(simulationView)
-	if err != nil {
+	result := this.Hoverfly.PutSimulation(simulationView)
+	if result.err != nil {
 
 		log.WithFields(log.Fields{
 			"body": string(body),
-		}).Debug(err.Error())
+		}).Debug(result.err.Error())
 
-		handlers.WriteErrorResponse(w, "An error occured: "+err.Error(), http.StatusInternalServerError)
+		handlers.WriteErrorResponse(w, "An error occurred: "+result.err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if len(result.WarningMessages) > 0 {
+		bytes, _ := util.JSONMarshal(result)
+
+		handlers.WriteResponse(w, bytes)
 		return
 	}
 
@@ -108,7 +114,7 @@ func (this *SimulationHandler) Options(w http.ResponseWriter, r *http.Request, n
 }
 
 func (this *SimulationHandler) GetSchema(w http.ResponseWriter, req *http.Request, next http.HandlerFunc) {
-	bytes, _ := json.Marshal(SimulationViewV4Schema)
+	bytes, _ := json.Marshal(SimulationViewV5Schema)
 
 	handlers.WriteResponse(w, bytes)
 }
