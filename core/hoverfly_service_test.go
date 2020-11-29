@@ -56,6 +56,10 @@ var (
 		Delay:      201,
 	}
 
+	invalidDelay = v1.ResponseDelayView{
+		UrlPattern: "test.com",
+	}
+
 	delayLogNormalOne = v1.ResponseDelayLogNormalView{
 		UrlPattern: ".",
 		HttpMethod: "GET",
@@ -122,7 +126,7 @@ func Test_Hoverfly_GetSimulation_ReturnsBlankSimulation_ifThereIsNoData(t *testi
 	Expect(simulation.RequestResponsePairs).To(HaveLen(0))
 	Expect(simulation.GlobalActions.Delays).To(HaveLen(0))
 
-	Expect(simulation.MetaView.SchemaVersion).To(Equal("v5"))
+	Expect(simulation.MetaView.SchemaVersion).To(Equal("v5.1"))
 	Expect(simulation.MetaView.HoverflyVersion).To(MatchRegexp(`v\d+.\d+.\d+(-rc.\d)*`))
 	Expect(simulation.MetaView.TimeExported).ToNot(BeNil())
 }
@@ -419,7 +423,7 @@ func Test_Hoverfly_GetFilteredSimulation_ReturnBlankSimulation_IfThereIsNoMatch(
 	Expect(simulation.GlobalActions.Delays).To(HaveLen(0))
 	Expect(simulation.GlobalActions.DelaysLogNormal).To(HaveLen(0))
 
-	Expect(simulation.MetaView.SchemaVersion).To(Equal("v5"))
+	Expect(simulation.MetaView.SchemaVersion).To(Equal("v5.1"))
 	Expect(simulation.MetaView.HoverflyVersion).To(MatchRegexp(`v\d+.\d+.\d+(-rc.\d)*`))
 	Expect(simulation.MetaView.TimeExported).ToNot(BeNil())
 }
@@ -606,6 +610,27 @@ func Test_Hoverfly_PutSimulation_ImportsDelays(t *testing.T) {
 	Expect(delays.Data[1].UrlPattern).To(Equal("test.com"))
 	Expect(delays.Data[1].HttpMethod).To(Equal(""))
 	Expect(delays.Data[1].Delay).To(Equal(201))
+}
+
+func Test_Hoverfly_PutSimulation_ImportsDelaysWithValidationError(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := NewHoverflyWithConfiguration(&Configuration{})
+
+	simulationToImport := v2.SimulationViewV5{
+		v2.DataViewV5{
+			GlobalActions: v2.GlobalActionsView{
+				Delays: []v1.ResponseDelayView{delayOne, invalidDelay},
+			},
+		},
+		v2.MetaView{},
+	}
+
+	err := unit.PutSimulation(simulationToImport)
+	Expect(err.GetError()).NotTo(BeNil())
+
+	delays := unit.Simulation.ResponseDelays.ConvertToResponseDelayPayloadView()
+	Expect(delays.Data).To(BeEmpty())
 }
 
 func Test_Hoverfly_PutSimulation_ImportsDelaysLogNormal(t *testing.T) {
@@ -947,6 +972,22 @@ func Test_Hoverfly_SetModeWithArguments_AsteriskCanOnlyBeValidAsTheOnlyHeader(t 
 	})).ToNot(Succeed())
 }
 
+func Test_Hoverfly_SetModeWithArguments_OverwriteDuplicate(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := NewHoverflyWithConfiguration(&Configuration{})
+
+	Expect(unit.SetModeWithArguments(v2.ModeView{
+		Mode: "capture",
+		Arguments: v2.ModeArgumentsView{
+			OverwriteDuplicate: true,
+		},
+	})).To(Succeed())
+
+	storedMode := unit.modeMap[modes.Capture].View()
+	Expect(storedMode.Arguments.OverwriteDuplicate).To(BeTrue())
+}
+
 func Test_Hoverfly_AddDiff_AddEntry(t *testing.T) {
 	RegisterTestingT(t)
 
@@ -1073,4 +1114,139 @@ func Test_Hoverfly_DeletePACFile(t *testing.T) {
 	unit.DeletePACFile()
 
 	Expect(unit.Cfg.PACFile).To(BeNil())
+}
+
+func Test_Hoverfly_ReplaceSimulation_OverridesSimulation(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := NewHoverflyWithConfiguration(&Configuration{})
+	importResult := unit.ReplaceSimulation(v2.SimulationViewV5{
+		v2.DataViewV5{
+			RequestResponsePairs: []v2.RequestMatcherResponsePairViewV5{pairOne},
+		},
+		v2.MetaView{},
+	})
+	Expect(importResult.GetError()).To(BeNil())
+
+	importResult = unit.ReplaceSimulation(v2.SimulationViewV5{
+		v2.DataViewV5{
+			RequestResponsePairs: []v2.RequestMatcherResponsePairViewV5{pairTwo},
+		},
+		v2.MetaView{},
+	})
+	Expect(importResult.GetError()).To(BeNil())
+
+	simulation, err := unit.GetSimulation()
+	Expect(err).To(BeNil())
+
+	Expect(simulation.RequestResponsePairs).To(HaveLen(1))
+	Expect(simulation.RequestResponsePairs[0].Response.Body).To(Equal(pairTwo.Response.Body))
+}
+
+func Test_Hoverfly_PutSimulation_NotOverridesSimulation(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := NewHoverflyWithConfiguration(&Configuration{})
+	importResult := unit.PutSimulation(v2.SimulationViewV5{
+		v2.DataViewV5{
+			RequestResponsePairs: []v2.RequestMatcherResponsePairViewV5{pairOne},
+		},
+		v2.MetaView{},
+	})
+	Expect(importResult.GetError()).To(BeNil())
+
+	importResult = unit.PutSimulation(v2.SimulationViewV5{
+		v2.DataViewV5{
+			RequestResponsePairs: []v2.RequestMatcherResponsePairViewV5{pairTwo},
+		},
+		v2.MetaView{},
+	})
+	Expect(importResult.GetError()).To(BeNil())
+
+	simulation, err := unit.GetSimulation()
+	Expect(err).To(BeNil())
+
+	Expect(simulation.RequestResponsePairs).To(HaveLen(2))
+	Expect(simulation.RequestResponsePairs[0].Response.Body).To(Equal(pairOne.Response.Body))
+	Expect(simulation.RequestResponsePairs[1].Response.Body).To(Equal(pairTwo.Response.Body))
+}
+
+
+func Test_Hoverfly_PutSimulation_BodyAndBodyFileWarning(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := NewHoverflyWithConfiguration(&Configuration{})
+	importResult := unit.PutSimulation(v2.SimulationViewV5{
+		v2.DataViewV5{
+			RequestResponsePairs: []v2.RequestMatcherResponsePairViewV5{{
+				RequestMatcher: v2.RequestMatcherViewV5{
+					Path: []v2.MatcherViewV5{
+						v2.NewMatcherView(matchers.Exact, "/testing"),
+					},
+				},
+				Response: v2.ResponseDetailsViewV5{
+					Body: "test-body",
+					BodyFile: "test-file",
+				},
+			}},
+		},
+		v2.MetaView{},
+	})
+	Expect(importResult.GetError()).To(BeNil())
+
+	Expect(importResult.WarningMessages).To(HaveLen(1))
+	Expect(importResult.WarningMessages[0].Message).To(ContainSubstring("Response contains both `body` and `bodyFile`"))
+}
+
+func Test_Hoverfly_PutSimulation_AbsoluteBodyFilePathNotAllowed(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := NewHoverflyWithConfiguration(&Configuration{})
+	importResult := unit.PutSimulation(v2.SimulationViewV5{
+		v2.DataViewV5{
+			RequestResponsePairs: []v2.RequestMatcherResponsePairViewV5{{
+				RequestMatcher: v2.RequestMatcherViewV5{
+					Path: []v2.MatcherViewV5{
+						v2.NewMatcherView(matchers.Exact, "/testing"),
+					},
+				},
+				Response: v2.ResponseDetailsViewV5{
+					BodyFile: "/tmp/test-file",
+				},
+			}},
+		},
+		v2.MetaView{},
+	})
+
+	err := importResult.GetError()
+	Expect(err).To(MatchError("data.pairs[0].response bodyFile contains absolute path (/tmp/test-file). only relative is supported"))
+}
+
+func Test_Hoverfly_PutSimulation_ImportsBodyFile(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := NewHoverflyWithConfiguration(&Configuration{ResponsesBodyFilesPath: "../functional-tests/core/testdata/"})
+	importResult := unit.PutSimulation(v2.SimulationViewV5{
+		v2.DataViewV5{
+			RequestResponsePairs: []v2.RequestMatcherResponsePairViewV5{{
+				RequestMatcher: v2.RequestMatcherViewV5{
+					Path: []v2.MatcherViewV5{
+						v2.NewMatcherView(matchers.Exact, "/testing"),
+					},
+				},
+				Response: v2.ResponseDetailsViewV5{
+					BodyFile: "key.pem",
+				},
+			}},
+		},
+		v2.MetaView{},
+	})
+
+	Expect(importResult.GetError()).To(BeNil())
+
+	simulation, err := unit.GetSimulation()
+	Expect(err).To(BeNil())
+
+	Expect(simulation.RequestResponsePairs[0].Response.Body).To(HavePrefix("-----BEGIN RSA PRIVATE KEY-----"))
+	Expect(simulation.RequestResponsePairs[0].Response.BodyFile).To(Equal("key.pem"))
 }

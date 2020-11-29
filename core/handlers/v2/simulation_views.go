@@ -8,8 +8,8 @@ import (
 
 	"strings"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/SpectoLabs/hoverfly/core/handlers/v1"
+	log "github.com/sirupsen/logrus"
 	"github.com/xeipuuv/gojsonschema"
 )
 
@@ -32,7 +32,8 @@ func NewSimulationViewFromRequestBody(responseBody []byte) (SimulationViewV5, er
 
 	schemaVersion := jsonMap["meta"].(map[string]interface{})["schemaVersion"].(string)
 
-	if schemaVersion == "v5" {
+	if schemaVersion == "v5" || schemaVersion == "v5.1" {
+
 		err := ValidateSimulation(jsonMap, SimulationViewV5Schema)
 		if err != nil {
 			return simulationView, errors.New(fmt.Sprintf("Invalid %s simulation: ", schemaVersion) + err.Error())
@@ -130,7 +131,7 @@ type MetaView struct {
 func NewMetaView(version string) *MetaView {
 	return &MetaView{
 		HoverflyVersion: version,
-		SchemaVersion:   "v5",
+		SchemaVersion:   "v5.1",
 		TimeExported:    time.Now().Format(time.RFC3339),
 	}
 }
@@ -156,7 +157,9 @@ func BuildSimulationView(
 const deprecatedQueryMessage = "Usage of deprecated field `deprecatedQuery` on data.pairs[%v].request.deprecatedQuery, please update your simulation to use `query` field"
 const deprecatedQueryDocs = "https://hoverfly.readthedocs.io/en/latest/pages/troubleshooting/troubleshooting.html#why-does-my-simulation-have-a-deprecatedquery-field"
 const ContentLengthAndTransferEncodingMessage = "Response contains both Content-Length and Transfer-Encoding headers on data.pairs[%v].response, please remove one of these headers"
+const BodyAndBodyFileMessage = "Response contains both `body` and `bodyFile` in data.pairs[%v].response, please remove one of them otherwise `body` is used if non empty"
 const ContentLengthMismatchMessage = "Response contains incorrect Content-Length header on data.pairs[%v].response, please correct or remove header"
+const pairIgnoredMessage = "data.pairs[%v] is not added due to a conflict with the existing simulation"
 
 type SimulationImportResult struct {
 	err             error                     `json:"error,omitempty"`
@@ -168,7 +171,7 @@ type SimulationImportWarning struct {
 	DocsLink string `json:"documentation,omitempty"`
 }
 
-func (s *SimulationImportResult) AddError(err error) {
+func (s *SimulationImportResult) SetError(err error) {
 	s.err = err
 }
 
@@ -192,8 +195,24 @@ func (s *SimulationImportResult) AddContentLengthAndTransferEncodingWarning(requ
 	s.WarningMessages = append(s.WarningMessages, SimulationImportWarning{Message: warning})
 }
 
+func (s *SimulationImportResult) AddBodyAndBodyFileWarning(requestNumber int) {
+	warning := fmt.Sprintf("WARNING: %s", fmt.Sprintf(BodyAndBodyFileMessage, requestNumber))
+	if s.WarningMessages == nil {
+		s.WarningMessages = []SimulationImportWarning{}
+	}
+	s.WarningMessages = append(s.WarningMessages, SimulationImportWarning{Message: warning})
+}
+
 func (s *SimulationImportResult) AddContentLengthMismatchWarning(requestNumber int) {
 	warning := fmt.Sprintf("WARNING: %s", fmt.Sprintf(ContentLengthMismatchMessage, requestNumber))
+	if s.WarningMessages == nil {
+		s.WarningMessages = []SimulationImportWarning{}
+	}
+	s.WarningMessages = append(s.WarningMessages, SimulationImportWarning{Message: warning})
+}
+
+func (s *SimulationImportResult) AddPairIgnoredWarning(requestNumber int) {
+	warning := fmt.Sprintf("WARNING: %s", fmt.Sprintf(pairIgnoredMessage, requestNumber))
 	if s.WarningMessages == nil {
 		s.WarningMessages = []SimulationImportWarning{}
 	}

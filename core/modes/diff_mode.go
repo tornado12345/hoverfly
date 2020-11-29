@@ -5,7 +5,7 @@ import (
 
 	"github.com/SpectoLabs/hoverfly/core/errors"
 
-	log "github.com/Sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 
 	"bytes"
 	"compress/flate"
@@ -39,9 +39,7 @@ func (this *DiffMode) View() v2.ModeView {
 	return v2.ModeView{
 		Mode: Diff,
 		Arguments: v2.ModeArgumentsView{
-			Headers:          this.Arguments.Headers,
-			MatchingStrategy: this.Arguments.MatchingStrategy,
-			Stateful:         this.Arguments.Stateful,
+			Headers: this.Arguments.Headers,
 		},
 	}
 }
@@ -51,7 +49,7 @@ func (this *DiffMode) SetArguments(arguments ModeArguments) {
 }
 
 //TODO: We should only need one of these two parameters
-func (this *DiffMode) Process(request *http.Request, details models.RequestDetails) (*http.Response, error) {
+func (this *DiffMode) Process(request *http.Request, details models.RequestDetails) (ProcessResult, error) {
 	this.DiffReport = v2.DiffReport{Timestamp: time.Now().Format(time.RFC3339)}
 
 	actualPair := models.RequestResponsePair{
@@ -61,7 +59,7 @@ func (this *DiffMode) Process(request *http.Request, details models.RequestDetai
 	simResponse, simRespErr := this.Hoverfly.GetResponse(details)
 
 	log.Info("Going to call real server")
-	modifiedRequest, err := ReconstructRequestForPassThrough(actualPair)
+	modifiedRequest, err := ReconstructRequest(actualPair)
 	if err != nil {
 		return ReturnErrorAndLog(request, err, &actualPair, "There was an error when reconstructing the request.", Diff)
 	}
@@ -77,11 +75,12 @@ func (this *DiffMode) Process(request *http.Request, details models.RequestDetai
 
 	if simRespErr == nil {
 		respBody, _ := util.GetResponseBody(actualResponse)
+		respHeaders := util.GetResponseHeaders(actualResponse)
 
 		actualResponseDetails := &models.ResponseDetails{
 			Status:  actualResponse.StatusCode,
-			Body:    string(respBody),
-			Headers: actualResponse.Header,
+			Body:    respBody,
+			Headers: respHeaders,
 		}
 
 		this.diffResponse(simResponse, actualResponseDetails, this.Arguments.Headers)
@@ -99,7 +98,7 @@ func (this *DiffMode) Process(request *http.Request, details models.RequestDetai
 		}).Info("There was no simulation matched for the request")
 	}
 
-	return actualResponse, nil
+	return newProcessResult(actualResponse, actualPair.Response.FixedDelay, actualPair.Response.LogNormalDelay), nil
 }
 
 func (this *DiffMode) diffResponse(expected *models.ResponseDetails, actual *models.ResponseDetails, headersBlacklist []string) {

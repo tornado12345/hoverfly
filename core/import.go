@@ -3,6 +3,8 @@ package hoverfly
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/SpectoLabs/hoverfly/core/delay"
+	"github.com/SpectoLabs/hoverfly/core/state"
 	"net/url"
 	"os"
 	"path"
@@ -13,10 +15,9 @@ import (
 	"io/ioutil"
 	"net/http"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/SpectoLabs/hoverfly/core/handlers/v2"
 	"github.com/SpectoLabs/hoverfly/core/models"
-	"github.com/SpectoLabs/hoverfly/core/state"
+	log "github.com/sirupsen/logrus"
 )
 
 // Import is a function that based on input decides whether it is a local resource or whether
@@ -143,11 +144,31 @@ func (hf *Hoverfly) importRequestResponsePairViews(pairViews []v2.RequestMatcher
 
 			pair := models.NewRequestMatcherResponsePairFromView(&pairView)
 
-			hf.Simulation.AddPair(pair)
-			for k, v := range pair.RequestMatcher.RequiresState {
-				initialStates[k] = v
+			if pairView.Response.LogNormalDelay != nil {
+				d := *pairView.Response.LogNormalDelay
+				if err := delay.ValidateLogNormalDelayOptions(d.Min, d.Max, d.Mean, d.Median); err != nil {
+					failed++
+					importResult.SetError(err)
+					break
+				}
 			}
-			success++
+
+			var isPairAdded bool
+			if hf.Cfg.NoImportCheck {
+				hf.Simulation.AddPairWithoutCheck(pair)
+				isPairAdded = true
+			} else {
+				isPairAdded = hf.Simulation.AddPair(pair)
+			}
+
+			if isPairAdded {
+				for k, v := range pair.RequestMatcher.RequiresState {
+					initialStates[k] = v
+				}
+				success++
+			} else {
+				importResult.AddPairIgnoredWarning(i)
+			}
 
 			if pairView.RequestMatcher.DeprecatedQuery != nil && len(pairView.RequestMatcher.DeprecatedQuery) != 0 {
 				importResult.AddDeprecatedQueryWarning(i)
@@ -167,7 +188,10 @@ func (hf *Hoverfly) importRequestResponsePairViews(pairViews []v2.RequestMatcher
 			continue
 		}
 
-		hf.state = state.NewStateFromState(initialStates)
+		if hf.state == nil {
+			hf.state = state.NewState()
+		}
+		hf.state.InitializeSequences(initialStates)
 
 		log.WithFields(log.Fields{
 			"total":      len(pairViews),

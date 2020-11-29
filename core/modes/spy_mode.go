@@ -5,7 +5,7 @@ import (
 
 	"github.com/SpectoLabs/hoverfly/core/errors"
 
-	log "github.com/Sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 
 	"github.com/SpectoLabs/hoverfly/core/handlers/v2"
 	"github.com/SpectoLabs/hoverfly/core/models"
@@ -40,7 +40,7 @@ func (this *SpyMode) SetArguments(arguments ModeArguments) {
 }
 
 //TODO: We should only need one of these two parameters
-func (this SpyMode) Process(request *http.Request, details models.RequestDetails) (*http.Response, error) {
+func (this SpyMode) Process(request *http.Request, details models.RequestDetails) (ProcessResult, error) {
 	pair := models.RequestResponsePair{
 		Request: details,
 	}
@@ -49,25 +49,29 @@ func (this SpyMode) Process(request *http.Request, details models.RequestDetails
 
 	if matchingErr != nil {
 		log.Info("Going to call real server")
-		modifiedRequest, err := ReconstructRequestForPassThrough(pair)
-		if err == nil {
-			response, err := this.Hoverfly.DoRequest(modifiedRequest)
-			if err == nil {
-				log.Info("Going to return response from real server")
-				return response, nil
-			}
+		modifiedRequest, err := ReconstructRequest(pair)
+		if err != nil {
+			return ReturnErrorAndLog(request, err, &pair, "There was an error when reconstructing the request.", Spy)
 		}
-	}
-
-	if matchingErr != nil {
-		return ReturnErrorAndLog(request, matchingErr, &pair, "There was an error when matching", Simulate)
+		response, err := this.Hoverfly.DoRequest(modifiedRequest)
+		if err == nil {
+			log.Info("Going to return response from real server")
+			return newProcessResult(response, 0, nil), nil
+		} else {
+			return ReturnErrorAndLog(request, err, &pair, "There was an error when forwarding the request to the intended destination", Spy)
+		}
 	}
 
 	pair.Response = *response
 
-	if pair, err := this.Hoverfly.ApplyMiddleware(pair); err == nil {
-		return ReconstructResponse(request, pair), nil
-	} else {
-		return ReturnErrorAndLog(request, err, &pair, "There was an error when executing middleware", Simulate)
+	pair, err := this.Hoverfly.ApplyMiddleware(pair)
+	if err != nil {
+		return ReturnErrorAndLog(request, err, &pair, "There was an error when executing middleware", Spy)
 	}
+
+	return newProcessResult(
+		ReconstructResponse(request, pair),
+		pair.Response.FixedDelay,
+		pair.Response.LogNormalDelay,
+	), nil
 }

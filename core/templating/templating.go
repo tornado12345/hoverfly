@@ -17,6 +17,7 @@ type TemplatingData struct {
 
 type Request struct {
 	QueryParam map[string][]string
+	Header     map[string][]string
 	Path       []string
 	Scheme     string
 	Body       func(queryType, query string, options *raymond.Options) string
@@ -40,6 +41,7 @@ func NewTemplator() *Templator {
 		raymond.RegisterHelper("currentDateTime", t.currentDateTime)
 		raymond.RegisterHelper("currentDateTimeAdd", t.currentDateTimeAdd)
 		raymond.RegisterHelper("currentDateTimeSubtract", t.currentDateTimeSubtract)
+		raymond.RegisterHelper("now", t.nowHelper)
 		raymond.RegisterHelper("randomString", t.randomString)
 		raymond.RegisterHelper("randomStringLength", t.randomStringLength)
 		raymond.RegisterHelper("randomBoolean", t.randomBoolean)
@@ -51,6 +53,7 @@ func NewTemplator() *Templator {
 		raymond.RegisterHelper("randomIPv4", t.randomIPv4)
 		raymond.RegisterHelper("randomIPv6", t.randomIPv6)
 		raymond.RegisterHelper("randomUuid", t.randomUuid)
+		raymond.RegisterHelper("replace", t.replace)
 
 		helpersRegistered = true
 	}
@@ -71,12 +74,12 @@ func (*Templator) RenderTemplate(tpl *raymond.Template, requestDetails *models.R
 	return tpl.Exec(ctx)
 }
 
-
 func NewTemplatingDataFromRequest(requestDetails *models.RequestDetails, state map[string]string) *TemplatingData {
 	return &TemplatingData{
 		Request: Request{
 			Path:       strings.Split(requestDetails.Path, "/")[1:],
 			QueryParam: requestDetails.Query,
+			Header:     requestDetails.Headers,
 			Scheme:     requestDetails.Scheme,
 			Body:       templateHelpers{}.requestBody,
 			body:       requestDetails.Body,

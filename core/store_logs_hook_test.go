@@ -6,8 +6,8 @@ import (
 
 	"time"
 
-	"github.com/Sirupsen/logrus"
 	. "github.com/onsi/gomega"
+	"github.com/sirupsen/logrus"
 )
 
 func Test_NewStoreLogsHook_CreatesNewStructWithInitializedEntryArray(t *testing.T) {

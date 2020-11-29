@@ -38,15 +38,24 @@ When Hoverfly cannot match a response to an incoming request, it will return inf
     The matcher which came closest was:
 
     {
-        "path": {
-            "exactMatch": "/closest-miss"
-        },
-        "destination": {
-            "exactMatch": "destination.com"
-        },
-        "body": {
-            "exactMatch": "body"
-        }
+        "path": [
+            {
+                "matcher": "exact",
+                "value": "/closest-miss"
+            }
+        ],
+        "destination": [
+            {
+                "matcher": "exact",
+                "value": "destination.com"
+            }
+        ],
+        "body": [
+            {
+                "matcher": "exact",
+                "value": "body"
+            }
+        ]
     }
 
     But it did not match on the following fields:
@@ -129,3 +138,8 @@ setting ``0.0.0.0`` to listen on all network interfaces.
 
     hoverfly -listen-on-host 0.0.0.0
 
+My simulation file is very large because of response bodies, what can I do with that?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+You can move those response bodies into separate files and specify :code:`bodyFile` in the response instead of
+:code:`body`. Please refer to :ref:`pairs`.

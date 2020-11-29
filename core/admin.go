@@ -9,9 +9,9 @@ import (
 	_ "github.com/SpectoLabs/hoverfly/core/statik"
 	"github.com/rakyll/statik/fs"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/codegangsta/negroni"
 	"github.com/go-zoo/bone"
+	log "github.com/sirupsen/logrus"
 
 	"github.com/SpectoLabs/hoverfly/core/handlers"
 	"github.com/SpectoLabs/hoverfly/core/handlers/v2"
@@ -104,6 +104,7 @@ func getAllHandlers(hoverfly *Hoverfly) []handlers.AdminHandler {
 		&v2.HoverflyVersionHandler{Hoverfly: hoverfly},
 		&v2.HoverflyUpstreamProxyHandler{Hoverfly: hoverfly},
 		&v2.HoverflyPACHandler{Hoverfly: hoverfly},
+		&v2.HoverflyCORSHandler{Hoverfly: hoverfly},
 		&v2.SimulationHandler{Hoverfly: hoverfly},
 		&v2.CacheHandler{Hoverfly: hoverfly},
 		&v2.LogsHandler{Hoverfly: hoverfly.StoreLogsHook},

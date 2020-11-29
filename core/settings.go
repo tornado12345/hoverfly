@@ -1,14 +1,15 @@
 package hoverfly
 
 import (
+	"github.com/SpectoLabs/hoverfly/core/cors"
 	"os"
 	"strconv"
 	"sync"
 
 	"strings"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/SpectoLabs/hoverfly/core/middleware"
+	log "github.com/sirupsen/logrus"
 )
 
 // Configuration - initial structure of configuration
@@ -30,7 +31,7 @@ type Configuration struct {
 	Verbose bool
 
 	DisableCache bool
-	CacheSize int
+	CacheSize    int
 
 	SecretKey          []byte
 	JWTExpirationDelta int
@@ -41,11 +42,16 @@ type Configuration struct {
 	HttpsOnly bool
 
 	PlainHttpTunneling bool
+	CORS               cors.Configs
+
+	NoImportCheck bool
 
 	ClientAuthenticationDestination string
 	ClientAuthenticationClientCert  string
 	ClientAuthenticationClientKey   string
 	ClientAuthenticationCACert      string
+
+	ResponsesBodyFilesPath string
 
 	ProxyControlWG sync.WaitGroup
 
@@ -91,6 +97,7 @@ const DefaultJWTExpirationDelta = 1 * 24 * 60 * 60
 
 // Environment variables
 const (
+	// TODO Should use naming convention for environment variables
 	HoverflyAuthEnabledEV     = "HoverflyAuthEnabled"
 	HoverflySecretEV          = "HoverflySecret"
 	HoverflyTokenExpirationEV = "HoverflyTokenExpiration"
@@ -109,6 +116,7 @@ const (
 	HoverflyImportRecordsEV = "HoverflyImport"
 
 	HoverflyUpstreamProxyPortEV = "UpstreamProxy"
+	HoverflySkipImportCheckEV   = "SKIP_IMPORT_CHECK"
 )
 
 // InitSettings gets and returns initial configuration from env
@@ -183,6 +191,12 @@ func InitSettings() *Configuration {
 		appConfig.TLSVerification = false
 	} else {
 		appConfig.TLSVerification = true
+	}
+
+	if os.Getenv(HoverflySkipImportCheckEV) == "true" {
+		appConfig.NoImportCheck = true
+	} else {
+		appConfig.NoImportCheck = false
 	}
 
 	appConfig.Mode = "simulate"

@@ -13,6 +13,13 @@ import (
 
 type HoverflyStub struct{}
 
+func (this HoverflyStub) GetCORS() CORSView {
+	return CORSView{
+		Enabled:     true,
+		AllowOrigin: "*",
+	}
+}
+
 func (this HoverflyStub) GetDestination() string {
 	return "test-destination.com"
 }
@@ -63,13 +70,6 @@ func (this *HoverflyStub) ClearState() {
 
 func (this *HoverflyStub) IsWebServer() bool {
 	return false
-}
-
-func (this *HoverflyStub) GetDiff() map[SimpleRequestDefinitionView][]DiffReport {
-	return nil
-}
-
-func (this *HoverflyStub) ClearDiff() {
 }
 
 func TestHoverflyHandlerGetReturnsTheCorrectMode(t *testing.T) {

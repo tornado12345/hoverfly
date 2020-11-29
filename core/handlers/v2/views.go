@@ -18,15 +18,26 @@ type MiddlewareView struct {
 	Remote string `json:"remote"`
 }
 
+type CORSView struct {
+	Enabled          bool   `json:"enabled"`
+	AllowOrigin      string `json:"allowOrigin,omitempty"`
+	AllowMethods     string `json:"allowMethods,omitempty"`
+	AllowHeaders     string `json:"allowHeaders,omitempty"`
+	PreflightMaxAge  int64  `json:"preflightMaxAge,omitempty"`
+	AllowCredentials bool   `json:"allowCredentials,omitempty"`
+	ExposeHeaders    string `json:"exposeHeaders,omitempty"`
+}
+
 type ModeView struct {
 	Mode      string            `json:"mode"`
 	Arguments ModeArgumentsView `json:"arguments,omitempty"`
 }
 
 type ModeArgumentsView struct {
-	Headers          []string `json:"headersWhitelist,omitempty"`
-	MatchingStrategy *string  `json:"matchingStrategy,omitempty"`
-	Stateful         bool     `json:"stateful,omitempty"`
+	Headers            []string `json:"headersWhitelist,omitempty"`
+	MatchingStrategy   *string  `json:"matchingStrategy,omitempty"`
+	Stateful           bool     `json:"stateful,omitempty"`
+	OverwriteDuplicate bool     `json:"overwriteDuplicate,omitempty"`
 }
 
 type IsWebServerView struct {
@@ -42,6 +53,7 @@ type UpstreamProxyView struct {
 }
 
 type HoverflyView struct {
+	CORSView `json:"cors"`
 	DestinationView
 	MiddlewareView `json:"middleware"`
 	ModeView

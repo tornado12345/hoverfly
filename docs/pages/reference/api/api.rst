@@ -16,6 +16,66 @@ Gets all simulation data. The simulation JSON contains all the information Hover
       "data": {
         "pairs": [
           {
+            "request": {
+              "path": [
+                {
+                  "matcher": "exact",
+                  "value": "/"
+                }
+              ],
+              "method": [
+                {
+                  "matcher": "exact",
+                  "value": "GET"
+                }
+              ],
+              "destination": [
+                {
+                  "matcher": "exact",
+                  "value": "myhost.io"
+                }
+              ],
+              "scheme": [
+                {
+                  "matcher": "exact",
+                  "value": "https"
+                }
+              ],
+              "body": [
+                {
+                  "matcher": "exact",
+                  "value": ""
+                }
+              ],
+              "headers": {
+                "Accept": [
+                  {
+                    "matcher": "glob",
+                    "value": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
+                  }
+                ],
+                "Content-Type": [
+                  {
+                    "matcher": "glob",
+                    "value": "text/plain; charset=utf-8"
+                  }
+                ],
+                "User-Agent": [
+                  {
+                    "matcher": "glob",
+                    "value": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/52.0.2743.116 Safari/537.36"
+                  }
+                ]
+              },
+              "query": {
+                "status": [
+                  {
+                    "matcher": "exact",
+                    "value": "available"
+                  }
+                ]
+              }
+            },
             "response": {
               "status": 200,
               "body": "<h1>Matched on recording</h1>",
@@ -24,41 +84,19 @@ Gets all simulation data. The simulation JSON contains all the information Hover
                 "Content-Type": [
                   "text/html; charset=utf-8"
                 ]
-              }
-            },
-            "request": {
-              "path": {
-	        "exactMatch": "/"
-	      },
-              "method": {
-	        "exactMatch": "GET"
               },
-	      "destination": {
-	        "exactMatch": "myhost.io"
-              },
-	      "scheme": {
-	        "exactMatch": "https"
-              },
-	      "query": {
-	        "exactMatch": ""
-	      },
-              "body": {
-	        "exactMatch": ""
-	      },
-              "headers": {
-                "Accept": [
-                  "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
-                ],
-                "Content-Type": [
-                  "text/plain; charset=utf-8"
-                ],
-                "User-Agent": [
-                  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/52.0.2743.116 Safari/537.36"
-                ]
-              }
+              "templated": false
             }
           },
           {
+            "request": {
+              "path": [
+                {
+                  "matcher": "exact",
+                  "value": "/template"
+                }
+              ]
+            },
             "response": {
               "status": 200,
               "body": "<h1>Matched on template</h1>",
@@ -69,22 +107,18 @@ Gets all simulation data. The simulation JSON contains all the information Hover
                 ]
               },
               "templated": false
-            },
-            "request": {
-              "path": {
-	        "exactMatch": "/template"
-	      }
             }
           }
         ],
         "globalActions": {
-          "delays": []
+          "delays": [],
+          "delaysLogNormal": []
         }
       },
       "meta": {
-        "schemaVersion": "v3",
-        "hoverflyVersion": "v0.11.0",
-        "timeExported": "2016-11-11T11:53:52Z"
+        "schemaVersion": "v5",
+        "hoverflyVersion": "v1.0.0",
+        "timeExported": "2019-05-30T22:14:24+01:00"
       }
     }
 
@@ -101,6 +135,66 @@ This puts the supplied simulation JSON into Hoverfly, overwriting any existing s
       "data": {
         "pairs": [
           {
+            "request": {
+              "path": [
+                {
+                  "matcher": "exact",
+                  "value": "/"
+                }
+              ],
+              "method": [
+                {
+                  "matcher": "exact",
+                  "value": "GET"
+                }
+              ],
+              "destination": [
+                {
+                  "matcher": "exact",
+                  "value": "myhost.io"
+                }
+              ],
+              "scheme": [
+                {
+                  "matcher": "exact",
+                  "value": "https"
+                }
+              ],
+              "body": [
+                {
+                  "matcher": "exact",
+                  "value": ""
+                }
+              ],
+              "headers": {
+                "Accept": [
+                  {
+                    "matcher": "glob",
+                    "value": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
+                  }
+                ],
+                "Content-Type": [
+                  {
+                    "matcher": "glob",
+                    "value": "text/plain; charset=utf-8"
+                  }
+                ],
+                "User-Agent": [
+                  {
+                    "matcher": "glob",
+                    "value": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/52.0.2743.116 Safari/537.36"
+                  }
+                ]
+              },
+              "query": {
+                "status": [
+                  {
+                    "matcher": "exact",
+                    "value": "available"
+                  }
+                ]
+              }
+            },
             "response": {
               "status": 200,
               "body": "<h1>Matched on recording</h1>",
@@ -109,41 +203,19 @@ This puts the supplied simulation JSON into Hoverfly, overwriting any existing s
                 "Content-Type": [
                   "text/html; charset=utf-8"
                 ]
-              }
-            },
-            "request": {
-              "path": {
-	        "exactMatch": "/"
-	      },
-              "method": {
-	        "exactMatch": "GET"
               },
-	      "destination": {
-	        "exactMatch": "myhost.io"
-              },
-	      "scheme": {
-	        "exactMatch": "https"
-              },
-	      "query": {
-	        "exactMatch": ""
-	      },
-              "body": {
-	        "exactMatch": ""
-	      },
-              "headers": {
-                "Accept": [
-                  "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
-                ],
-                "Content-Type": [
-                  "text/plain; charset=utf-8"
-                ],
-                "User-Agent": [
-                  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/52.0.2743.116 Safari/537.36"
-                ]
-              }
+              "templated": false
             }
           },
           {
+            "request": {
+              "path": [
+                {
+                  "matcher": "exact",
+                  "value": "/template"
+                }
+              ]
+            },
             "response": {
               "status": 200,
               "body": "<h1>Matched on template</h1>",
@@ -152,25 +224,146 @@ This puts the supplied simulation JSON into Hoverfly, overwriting any existing s
                 "Content-Type": [
                   "text/html; charset=utf-8"
                 ]
-              }
-            },
-            "request": {
-              "path": {
-	        "exactMatch": "/template"
-	      }
+              },
+              "templated": false
             }
           }
         ],
         "globalActions": {
-          "delays": []
+          "delays": [],
+          "delaysLogNormal": []
         }
       },
       "meta": {
-        "schemaVersion": "v3",
-        "hoverflyVersion": "v0.11.0",
-        "timeExported": "2016-11-11T11:53:52Z"
+        "schemaVersion": "v5",
+        "hoverflyVersion": "v1.0.0",
+        "timeExported": "2019-05-30T22:14:24+01:00"
       }
     }
+
+POST /api/v2/simulation
+"""""""""""""""""""""""
+
+This appends the supplied simulation JSON to the existing simulation data in Hoverfly. Any pair that has request data identical to the existing ones will not be added.
+
+**Example request body**
+::
+
+    {
+      "data": {
+        "pairs": [
+          {
+            "request": {
+              "path": [
+                {
+                  "matcher": "exact",
+                  "value": "/"
+                }
+              ],
+              "method": [
+                {
+                  "matcher": "exact",
+                  "value": "GET"
+                }
+              ],
+              "destination": [
+                {
+                  "matcher": "exact",
+                  "value": "myhost.io"
+                }
+              ],
+              "scheme": [
+                {
+                  "matcher": "exact",
+                  "value": "https"
+                }
+              ],
+              "body": [
+                {
+                  "matcher": "exact",
+                  "value": ""
+                }
+              ],
+              "headers": {
+                "Accept": [
+                  {
+                    "matcher": "glob",
+                    "value": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
+                  }
+                ],
+                "Content-Type": [
+                  {
+                    "matcher": "glob",
+                    "value": "text/plain; charset=utf-8"
+                  }
+                ],
+                "User-Agent": [
+                  {
+                    "matcher": "glob",
+                    "value": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/52.0.2743.116 Safari/537.36"
+                  }
+                ]
+              },
+              "query": {
+                "status": [
+                  {
+                    "matcher": "exact",
+                    "value": "available"
+                  }
+                ]
+              }
+            },
+            "response": {
+              "status": 200,
+              "body": "<h1>Matched on recording</h1>",
+              "encodedBody": false,
+              "headers": {
+                "Content-Type": [
+                  "text/html; charset=utf-8"
+                ]
+              },
+              "templated": false
+            }
+          },
+          {
+            "request": {
+              "path": [
+                {
+                  "matcher": "exact",
+                  "value": "/template"
+                }
+              ]
+            },
+            "response": {
+              "status": 200,
+              "body": "<h1>Matched on template</h1>",
+              "encodedBody": false,
+              "headers": {
+                "Content-Type": [
+                  "text/html; charset=utf-8"
+                ]
+              },
+              "templated": false
+            }
+          }
+        ],
+        "globalActions": {
+          "delays": [],
+          "delaysLogNormal": []
+        }
+      },
+      "meta": {
+        "schemaVersion": "v5",
+        "hoverflyVersion": "v1.0.0",
+        "timeExported": "2019-05-30T22:14:24+01:00"
+      }
+    }
+
+
+DELETE /api/v2/simulation
+"""""""""""""""""""""""""
+
+Unsets the simulation data for Hoverfly.
 
 -------------------------------------------------------------------------------------------------------------
 
@@ -190,12 +383,17 @@ Gets configuration information from the running instance of Hoverfly.
 ::
 
     {
+        "cors": {
+            "enabled": true,
+            "allowOrigin": "*",
+            "allowMethods": "GET,POST,PUT,OPTIONS"
+        },
         "destination": ".",
         "middleware": {
-        "binary": "python",
-		"script": "# a python script would go here",
-		"remote": ""
-	},
+            "binary": "python",
+            "script": "# a python script would go here",
+            "remote": ""
+        },
         "mode": "simulate",
         "usage": {
             "counters": {
@@ -205,6 +403,25 @@ Gets configuration information from the running instance of Hoverfly.
                 "synthesize": 0
             }
         }
+    }
+
+-------------------------------------------------------------------------------------------------------------
+
+GET /api/v2/hoverfly/cors
+"""""""""""""""""""""""""
+
+Gets CORS configuration information from the running instance of Hoverfly.
+
+**Example response body**
+::
+
+    {
+        "enabled": true,
+        "allowOrigin": "*",
+        "allowMethods": "GET,POST,PUT,PATCH,DELETE,HEAD,OPTIONS",
+        "allowHeaders": "Content-Type, Origin, Accept, Authorization, Content-Length, X-Requested-With",
+        "preflightMaxAge": 1800,
+        "allowCredentials": true
     }
 
 
@@ -254,8 +471,8 @@ a binary or a URL to remote middleware.
 
     {
         "binary": "python",
-	      "script": "#python code goes here",
-	      "remote": ""
+        "script": "#python code goes here",
+        "remote": ""
     }
 
 
@@ -272,8 +489,8 @@ and the binary to execute it or the URL to a remote middleware.
 
     {
         "binary": "python",
-	      "script": "#python code goes here",
-	      "remote": ""
+        "script": "#python code goes here",
+        "remote": ""
     }
 
 
@@ -290,7 +507,13 @@ Gets the mode for the running instance of Hoverfly.
 
     {
         "mode": "capture",
-        "arguments": {}
+        "arguments": {
+            "headersWhitelist": [
+                "*"
+            ],
+            "stateful": true,
+            "overwriteDuplicate": true
+        }
     }
 
 --------------
@@ -298,13 +521,20 @@ Gets the mode for the running instance of Hoverfly.
 PUT /api/v2/hoverfly/mode
 """""""""""""""""""""""""
 
-Changes the mode of the running instance of Hoverfly.
+Changes the mode of the running instance of Hoverfly. Pass additional arguments to set the mode options.
 
 **Example request body**
 ::
 
     {
-        "mode": "capture"
+        "mode": "capture",
+        "arguments": {
+            "headersWhitelist": [
+                "*"
+            ],
+            "stateful": true,
+            "overwriteDuplicate": true
+        }
     }
 
 
@@ -405,9 +635,10 @@ Gets the requests and responses stored in the cache.
                 "key": "2fc8afceec1b6bcf99ff1f547c1f5b11",
                 "matchingPair": {
                     "request": {
-                        "path": {
-                            "exactMatch": "hoverfly.io"
-                        }
+                        "path": [{
+                            "matcher": "exact",
+                            "value": "hoverfly.io"
+                        }]
                     },
                     "response": {
                         "status": 200,
@@ -420,7 +651,8 @@ Gets the requests and responses stored in the cache.
                         }
                     }
                 },
-                "headerMatch": false
+                "headerMatch": false,
+                "closestMiss": null
             }
         ]
     }
@@ -475,9 +707,11 @@ Gets the logs from Hoverfly.
 
 GET /api/v2/journal
 """""""""""""""""""
-Gets the journal from Hoverfly. Each journal entry contains both the request Hoverfly recieved and the response 
-it served along with the mode Hoverfly was in, the time the request was recieved and the time taken for Hoverfly
+Gets the journal from Hoverfly. Each journal entry contains both the request Hoverfly received and the response
+it served along with the mode Hoverfly was in, the time the request was received and the time taken for Hoverfly
 to process the request. Latency is in milliseconds.
+
+It supports paging using the ``offset`` and ``limit`` query parameters.
 
 **Example response body**
 ::
@@ -517,7 +751,10 @@ to process the request. Latency is in milliseconds.
         "timeStarted": "2017-07-17T10:41:59.168+01:00",
         "latency": 0.61334
       }
-    ]
+    ],
+    "offset": 0,
+    "limit": 25,
+    "total": 1
   }
 
 
@@ -540,9 +777,10 @@ Filter and search entries stored in the journal.
 ::
     {
         "request": {
-            "destination": {
-              "exactMatch": "hoverfly.io"
-            }
+            "destination": [{
+              "matcher": "exact",
+              "value": "hoverfly.io"
+            }]
         }
     }
 
@@ -642,3 +880,7 @@ Gets all reports containing response differences from Hoverfly. The diffs are re
 DELETE /api/v2/diff
 """"""""""""""""""""
 Deletes all reports containing differences from Hoverfly.
+
+DELETE /api/v2/shutdown
+""""""""""""""""""""
+Shuts down the hoverfly instance.

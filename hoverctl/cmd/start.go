@@ -8,7 +8,9 @@ import (
 
 	"github.com/SpectoLabs/hoverfly/hoverctl/configuration"
 	"github.com/SpectoLabs/hoverfly/hoverctl/wrapper"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 var startCmd = &cobra.Command{
@@ -72,6 +74,10 @@ hoverctl configuration file.
 
 		target.UpstreamProxyUrl, _ = cmd.Flags().GetString("upstream-proxy")
 		target.HttpsOnly, _ = cmd.Flags().GetBool("https-only")
+		target.CORS, _ = cmd.Flags().GetBool("cors")
+		target.NoImportCheck, _ = cmd.Flags().GetBool("no-import-check")
+
+		target.Simulations, _ = cmd.Flags().GetStringSlice("import")
 
 		if pacFileLocation, _ := cmd.Flags().GetString("pac-file"); pacFileLocation != "" {
 
@@ -110,6 +116,35 @@ hoverctl configuration file.
 			target.Password = password
 		}
 
+		target.LogOutput, _ = cmd.Flags().GetStringSlice("logs-output")
+		target.LogFile, _ = cmd.Flags().GetString("logs-file")
+
+		hasLogOutputFile := false
+		for _, logOutput := range target.LogOutput {
+			if logOutput == "file" {
+				hasLogOutputFile = true
+			}
+			if logOutput != "console" && logOutput != "file" {
+				handleIfError(fmt.Errorf("Unknown logs-output value: " + logOutput))
+			}
+		}
+		if !hasLogOutputFile {
+			cmd.Flags().Visit(func(f *pflag.Flag) {
+				if f.Name == "logs-file" {
+					handleIfError(fmt.Errorf("Flag -logs-file is not allowed unless -logs-output is set to 'file'."))
+				}
+			})
+		}
+
+		logLevelFlag, _ := cmd.Flags().GetString("log-level")
+		logLevel, err := log.ParseLevel(logLevelFlag)
+		if err != nil {
+			log.WithFields(log.Fields{
+				"log-level": logLevelFlag,
+			}).Fatal("Unknown log-level value")
+		}
+		target.LogLevel = logLevel.String()
+
 		err = wrapper.Start(target)
 		handleIfError(err)
 
@@ -140,15 +175,17 @@ func init() {
 	startCmd.Flags().Int("proxy-port", 0, "A port number for the Hoverfly proxy. Overrides the default Hoverfly proxy port (8500)")
 	startCmd.Flags().String("host", "", "A host on which a Hoverfly instance is running. Overrides the default Hoverfly host (localhost)")
 
-	startCmd.Flags().String("cache", "", "A path to a persisted Hoverfly cache. If the cache doesn't exist, Hoverfly will create it")
-	startCmd.Flags().Bool("disable-cache", false, "Disables the request response cache on Hoverfly")
+	startCmd.Flags().String("cache", "", "A path to a BoltDB file with persisted user and token data for authentication (DEPRECATED)")
+	startCmd.Flags().Bool("disable-cache", false, "Disable the request/response cache on Hoverfly (the cache that sits in front of matching)")
 	startCmd.Flags().String("certificate", "", "A path to a certificate file. Overrides the default Hoverfly certificate")
 	startCmd.Flags().String("key", "", "A path to a key file. Overrides the default Hoverfly TLS key")
-	startCmd.Flags().Bool("disable-tls", false, "Disables TLS verification")
+	startCmd.Flags().Bool("disable-tls", false, "Disable TLS verification")
 	startCmd.Flags().String("upstream-proxy", "", "A host for which Hoverfly will proxy its requests to")
 	startCmd.Flags().String("pac-file", "", "Configure upstream proxy by PAC file")
-	startCmd.Flags().Bool("https-only", false, "Disables insecure HTTP traffic in Hoverfly")
-	startCmd.Flags().String("listen-on-host", "", "Binds hoverfly listener to a host")
+	startCmd.Flags().Bool("https-only", false, "Disable insecure HTTP traffic in Hoverfly")
+	startCmd.Flags().String("listen-on-host", "", "Bind hoverfly listener to a host")
+	startCmd.Flags().Bool("cors", false, "Enable CORS support")
+	startCmd.Flags().Bool("no-import-check", false, "Skip duplicate request check when importing simulations")
 
 	startCmd.Flags().String("client-authentication-destination", "", "Regular expression for hosts need client authentication")
 	startCmd.Flags().String("client-authentication-client-cert", "", "Path to client certificate file used for authentication")
@@ -158,4 +195,10 @@ func init() {
 	startCmd.Flags().Bool("auth", false, "Enable authentication on Hoverfly")
 	startCmd.Flags().String("username", "", "Username to authenticate Hoverfly")
 	startCmd.Flags().String("password", "", "Password to authenticate Hoverfly")
+
+	startCmd.Flags().StringSlice("import", []string{}, "Simulations to import")
+
+	startCmd.Flags().StringSlice("logs-output", []string{}, "Locations for log output, \"console\"(default) or \"file\"")
+	startCmd.Flags().String("logs-file", "", "Log file name. Use \"hoverfly-<target name>.log\" if not provided")
+	startCmd.Flags().String("log-level", "info", "Set log level (panic, fatal, error, warn, info or debug)")
 }

@@ -12,12 +12,12 @@ import (
 
 	"fmt"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/SpectoLabs/goproxy"
 	"github.com/SpectoLabs/goproxy/ext/auth"
 	"github.com/SpectoLabs/hoverfly/core/authentication"
 	"github.com/SpectoLabs/hoverfly/core/authentication/backends"
 	"github.com/SpectoLabs/hoverfly/core/util"
+	log "github.com/sirupsen/logrus"
 )
 
 var ProxyAuthorizationHeader string
@@ -29,14 +29,6 @@ func NewProxy(hoverfly *Hoverfly) *goproxy.ProxyHttpServer {
 
 	// creating proxy
 	proxy := goproxy.NewProxyHttpServer()
-
-	proxy.OnRequest(matchesFilter(hoverfly.Cfg.Destination)).
-		HandleConnect(goproxy.FuncHttpsHandler(func(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
-			if hoverfly.Cfg.PlainHttpTunneling && !strings.HasSuffix(host, ":443") {
-				return goproxy.HTTPMitmConnect, host
-			}
-			return goproxy.MitmConnect, host
-		}))
 
 	if hoverfly.Cfg.HttpsOnly {
 		log.Info("Disabling HTTP")
@@ -59,6 +51,14 @@ func NewProxy(hoverfly *Hoverfly) *goproxy.ProxyHttpServer {
 			return authentication.IsJwtTokenValid(headerToken, hoverfly.Authentication, hoverfly.Cfg.SecretKey, hoverfly.Cfg.JWTExpirationDelta)
 		})
 	}
+
+	proxy.OnRequest(matchesFilter(hoverfly.Cfg.Destination)).
+		HandleConnect(goproxy.FuncHttpsHandler(func(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
+			if hoverfly.Cfg.PlainHttpTunneling && !strings.HasSuffix(host, ":443") {
+				return goproxy.HTTPMitmConnect, host
+			}
+			return goproxy.MitmConnect, host
+		}))
 
 	// processing connections
 	proxy.OnRequest(matchesFilter(hoverfly.Cfg.Destination)).DoFunc(
@@ -127,8 +127,6 @@ func NewWebserverProxy(hoverfly *Hoverfly) *goproxy.ProxyHttpServer {
 			}
 		}
 
-		w.Header().Set("Req", r.RequestURI)
-		w.Header().Set("Resp", resp.Header.Get("Content-Length"))
 		w.WriteHeader(resp.StatusCode)
 		w.Write([]byte(body))
 
@@ -169,6 +167,9 @@ func unauthorizedError(request *http.Request, realm, message string) *http.Respo
 func proxyBasicAndBearer(proxy *goproxy.ProxyHttpServer, realm string, basicFunc func(user, passwd string) bool, bearerFunc func(token string) bool) {
 
 	proxy.OnRequest().Do(goproxy.FuncReqHandler(func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+		if strings.HasSuffix(req.URL.Host, ":443") {
+			return req, nil
+		}
 		err := authFromHeader(req, basicFunc, bearerFunc)
 		if err != nil {
 			return nil, unauthorizedError(req, realm, err.Error())
@@ -228,7 +229,7 @@ func matchesFilter(filter string) goproxy.ReqConditionFunc {
 	return func(req *http.Request, ctx *goproxy.ProxyCtx) bool {
 
 		scheme := req.URL.Scheme
-		host := req.Host		// relative URL does not have host value, and this is a safer way to get the hostname from request struct
+		host := req.Host // relative URL does not have host value, and this is a safer way to get the hostname from request struct
 		path := req.URL.Path
 
 		if scheme == "https" || strings.Contains(host, ":443") {

@@ -1,8 +1,11 @@
 package journal
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	sorting "sort"
@@ -12,9 +15,10 @@ import (
 	"github.com/SpectoLabs/hoverfly/core/matching"
 	"github.com/SpectoLabs/hoverfly/core/models"
 	"github.com/SpectoLabs/hoverfly/core/util"
+	log "github.com/sirupsen/logrus"
 )
 
-var RFC3339Milli = "2006-01-02T15:04:05.000Z07:00"
+const RFC3339Milli = "2006-01-02T15:04:05.000Z07:00"
 
 type JournalEntry struct {
 	Request     *models.RequestDetails
@@ -27,6 +31,7 @@ type JournalEntry struct {
 type Journal struct {
 	entries    []JournalEntry
 	EntryLimit int
+	mutex      sync.Mutex
 }
 
 func NewJournal() *Journal {
@@ -47,30 +52,53 @@ func (this *Journal) NewEntry(request *http.Request, response *http.Response, mo
 
 	payloadResponse := &models.ResponseDetails{
 		Status:  response.StatusCode,
-		Body:    string(respBody),
+		Body:    respBody,
 		Headers: response.Header,
 	}
 
+	this.mutex.Lock()
 	if len(this.entries) >= this.EntryLimit {
 		this.entries = append(this.entries[:0], this.entries[1:]...)
 	}
 
-	this.entries = append(this.entries, JournalEntry{
+	entry := JournalEntry{
 		Request:     &payloadRequest,
 		Response:    payloadResponse,
 		Mode:        mode,
 		TimeStarted: started,
 		Latency:     time.Since(started),
-	})
+	}
+
+	this.entries = append(this.entries, entry)
+
+	if log.IsLevelEnabled(log.DebugLevel) {
+		buf := new(bytes.Buffer)
+		enc := json.NewEncoder(buf)
+		// do not escape characters in HTML like < and >
+		enc.SetEscapeHTML(false)
+		err := enc.Encode(convertJournalEntry(entry))
+		if err != nil {
+			log.WithFields(log.Fields{
+				"error": err.Error(),
+			}).Error("invalid journal entry")
+		} else {
+			log.WithFields(log.Fields{
+				"json": buf.String(),
+			}).Debug("journal entry")
+		}
+	}
+
+	this.mutex.Unlock()
 
 	return nil
 }
 
-func (this Journal) GetEntries(offset int, limit int, from *time.Time, to *time.Time, sort string) (v2.JournalView, error) {
+func (this *Journal) GetEntries(offset int, limit int, from *time.Time, to *time.Time, sort string) (v2.JournalView, error) {
+
 	journalView := v2.JournalView{
 		Journal: []v2.JournalEntryView{},
-		Offset:  0,
-		Limit:   v2.DefaultJournalLimit,
+		Offset:  offset,
+		Limit:   limit,
 		Total:   0,
 	}
 
@@ -84,7 +112,7 @@ func (this Journal) GetEntries(offset int, limit int, from *time.Time, to *time.
 		return journalView, err
 	}
 
-	selectedEntries := []JournalEntry{}
+	var selectedEntries []JournalEntry
 
 	// Filtering
 	if from != nil || to != nil {
@@ -118,9 +146,7 @@ func (this Journal) GetEntries(offset int, limit int, from *time.Time, to *time.
 
 	totalElements := len(selectedEntries)
 
-	if offset < 0 {
-		offset = 0
-	} else if offset >= totalElements {
+	if offset >= totalElements {
 		return journalView, nil
 	}
 
@@ -130,15 +156,15 @@ func (this Journal) GetEntries(offset int, limit int, from *time.Time, to *time.
 	}
 
 	journalView.Journal = convertJournalEntries(selectedEntries[offset:endIndex])
-	journalView.Offset = offset
-	journalView.Limit = limit
 	journalView.Total = totalElements
 	return journalView, nil
 }
 
-func (this Journal) GetFilteredEntries(journalEntryFilterView v2.JournalEntryFilterView) ([]v2.JournalEntryView, error) {
+func (this *Journal) GetFilteredEntries(journalEntryFilterView v2.JournalEntryFilterView) ([]v2.JournalEntryView, error) {
+	// init an empty slice to prevent serializing to a null value
 	filteredEntries := []v2.JournalEntryView{}
 	if this.EntryLimit == 0 {
+
 		return filteredEntries, fmt.Errorf("Journal disabled")
 	}
 
@@ -204,7 +230,7 @@ func (this *Journal) DeleteEntries() error {
 
 func convertJournalEntries(entries []JournalEntry) []v2.JournalEntryView {
 
-	journalEntryViews := []v2.JournalEntryView{}
+	var journalEntryViews []v2.JournalEntryView
 
 	for _, journalEntry := range entries {
 		journalEntryViews = append(journalEntryViews, v2.JournalEntryView{
@@ -217,6 +243,17 @@ func convertJournalEntries(entries []JournalEntry) []v2.JournalEntryView {
 	}
 
 	return journalEntryViews
+}
+
+func convertJournalEntry(entry JournalEntry) v2.JournalEntryView {
+
+	return v2.JournalEntryView{
+		Request:     entry.Request.ConvertToRequestDetailsView(),
+		Response:    entry.Response.ConvertToResponseDetailsView(),
+		Mode:        entry.Mode,
+		TimeStarted: entry.TimeStarted.Format(RFC3339Milli),
+		Latency:     entry.Latency.Seconds() * 1e3,
+	}
 }
 
 func getSortParameters(sort string) (string, string, error) {

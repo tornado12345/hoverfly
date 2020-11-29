@@ -32,9 +32,13 @@ Currently, you can get the following data from request to the response via templ
 +------------------------------+----------------------------------------------+----------------------------------------------+--------+
 | Method                       | {{ Request.Method }}                         | http://www.foo.com/zero/one/two              | GET    |
 +------------------------------+----------------------------------------------+----------------------------------------------+--------+
-| jsonpath on body             | {{ Request.Body "jsonpath" "$.test" }}       | { "id": 123, "username": "hoverfly" }        | 123    |
+| jsonpath on body             | {{ Request.Body "jsonpath" "$.id" }}         | { "id": 123, "username": "hoverfly" }        | 123    |
 +------------------------------+----------------------------------------------+----------------------------------------------+--------+
 | xpath on body                | {{ Request.Body "xpath" "/root/id" }}        | <root><id>123</id></root>                    | 123    |
++------------------------------+----------------------------------------------+----------------------------------------------+--------+
+| Header value                 | {{ Request.Header.X-Header-Id }}             | { "X-Header-Id": ["bar"] }                   | bar    |
++------------------------------+----------------------------------------------+----------------------------------------------+--------+
+| Header value (list)          | {{ Request.Header.X-Header-Id.[1] }}         | { "X-Header-Id": ["bar1", "bar2"] }          | bar2   |
 +------------------------------+----------------------------------------------+----------------------------------------------+--------+
 | State                        | {{ State.basket }}                           | State Store = {"basket":"eggs"}              | eggs   |
 +------------------------------+----------------------------------------------+----------------------------------------------+--------+
@@ -42,23 +46,18 @@ Currently, you can get the following data from request to the response via templ
 Helper Methods
 --------------
 
-Additional data can come from helper methods. Current we only have some for the current data, but this list is likely to expand:
+Additional data can come from helper methods. These are the ones Hoverfly currently support:
 
 +-----------------------------------------------------------+-----------------------------------------------------------+-----------------------------------------+
 | Description                                               | Example                                                   |  Result                                 |
 +===========================================================+===========================================================+=========================================+
-| The current UTC date time, formatted in iso8601           | {{ iso8601DateTime }}                                     |  2006-01-02T15:04:05Z                   |
-+-----------------------------------------------------------+-----------------------------------------------------------+-----------------------------------------+
-| The current UTC date time, formatted in iso8601,          |                                                           |                                         |
-| with days added                                           | {{ iso8601DateTimePlusDays Request.QueryParam.plusDays }} |  2006-02-02T15:04:05Z                   |
-+-----------------------------------------------------------+-----------------------------------------------------------+-----------------------------------------+
-| The current UTC date time, in the format specified        | {{ currentDateTime "2006-Jan-02" }}                       |  2018-Jul-05                            |
-+-----------------------------------------------------------+-----------------------------------------------------------+-----------------------------------------+
-| The current UTC date time, in the format specified,       |                                                           |                                         |
-| with duration added                                       | {{ currentDateTimeAdd "1d" "2006-Jan-02" }}               |  2018-Jul-06                            |
-+-----------------------------------------------------------+-----------------------------------------------------------+-----------------------------------------+
-| The current UTC date time, in the format specified,       |                                                           |                                         |
-| with duration subtracted                                  | {{ currentDateTimeSubtract "1d" "2006-Jan-02" }}          |  2018-Jul-04                            |
+| The current date time with offset, in the given format.   |                                                           |                                         |
+|                                                           |                                                           |                                         |
+| For example:                                              |                                                           |                                         |
+|                                                           |                                                           |                                         |
+| - The current date time plus 1 day in unix timestamp      | - {{ now "1d" "unix" }}                                   |  - 1136300645                           |
+| - The current date time in ISO 8601 format                | - {{ now "" "" }}                                         |  - 2006-01-02T15:04:05Z                 |
+| - The current date time minus 1 day in custom format      | - {{ now "-1d" "2006-Jan-02" }}                           |  - 2006-Jan-01                          |
 +-----------------------------------------------------------+-----------------------------------------------------------+-----------------------------------------+
 | A random string                                           | {{ randomString }}                                        |  hGfclKjnmwcCds                         |
 +-----------------------------------------------------------+-----------------------------------------------------------+-----------------------------------------+
@@ -82,10 +81,24 @@ Additional data can come from helper methods. Current we only have some for the 
 +-----------------------------------------------------------+-----------------------------------------------------------+-----------------------------------------+
 | A random UUID                                             | {{ randomUuid }}                                          |  7b791f3d-d7f4-4635-8ea1-99568d821562   |
 +-----------------------------------------------------------+-----------------------------------------------------------+-----------------------------------------+
+| Replace all occurrences of the old value with the new     | {{ replace Request.Body "be" "mock" }}                    |                                         |
+|                                                           |                                                           |                                         |
+| value in the target string                                | (where Request.Body has the value of "to be or not to be" |  to mock or not to mock                 |
++-----------------------------------------------------------+-----------------------------------------------------------+-----------------------------------------+
 
-Durations
-~~~~~~~~~
-When using template helper methods such as ``currentDateTimeAdd`` and ``currentDateTimeSubtract``, durations must be formatted following the following syntax for durations. 
+.. note::
+
+    The following helper methods will be deprecated, please use ``now`` helper for date time:
+        - ``iso8601DateTime``
+        - ``iso8601DateTimePlusDays``
+        - ``currentDateTime``
+        - ``currentDateTimeAdd``
+        - ``currentDateTimeSubtract``
+
+
+Time offset
+~~~~~~~~~~~
+When using template helper method ``now``, time offset must be formatted using the following syntax.
 
 +-----------+-------------+
 | Shorthand | Type        |
@@ -107,8 +120,10 @@ When using template helper methods such as ``currentDateTimeAdd`` and ``currentD
 | y         | Year        |
 +-----------+-------------+
 
-Example Durations
-~~~~~~~~~~~~~~~~~
+Prefix an offset with ``-`` to subtract the duration from the current date time.
+
+Example time offset
+~~~~~~~~~~~~~~~~~~~
 
 +-----------+-------------------+
 | 5m        | 5 minutes         |
@@ -120,8 +135,8 @@ Example Durations
 
 Date time formats
 ~~~~~~~~~~~~~~~~~
-When using template helper methods such as ``currentDateTime``, ``currentDateTimeAdd`` and ``currentDateTimeSubtract``, date time formats must follow
-the Golang syntax. More can be found out here https://golang.org/pkg/time/#Parse
+When using template helper method ``now``, date time formats must follow the Golang syntax.
+More can be found out here https://golang.org/pkg/time/#Parse
 
 Example date time formats
 ~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -133,6 +148,15 @@ Example date time formats
 +-------------------------------+
 | Jan _2 15:04:05               |
 +-------------------------------+
+
+.. note::
+
+    If you leave the format string empty, the default format to be used is ISO 8601 (2006-01-02T15:04:05Z07:00).
+
+    You can also get an UNIX timestamp by setting the format to:
+
+    - ``unix``: UNIX timestamp in seconds
+    - ``epoch``: UNIX timestamp in milliseconds
 
 
 Conditional Templating, Looping and More

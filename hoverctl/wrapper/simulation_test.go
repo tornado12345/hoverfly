@@ -1,6 +1,7 @@
 package wrapper
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/SpectoLabs/hoverfly/core/handlers/v2"
@@ -11,9 +12,9 @@ import (
 func Test_ExportSimulation_GetsModeFromHoverfly(t *testing.T) {
 	RegisterTestingT(t)
 
-	hoverfly.DeleteSimulation()
-	hoverfly.PutSimulation(v2.SimulationViewV5{
-		v2.DataViewV5{
+	responseBody := `{"simulation": true}`
+	simulationList := v2.SimulationViewV5{
+		DataViewV5: v2.DataViewV5{
 			RequestResponsePairs: []v2.RequestMatcherResponsePairViewV5{
 				{
 					RequestMatcher: v2.RequestMatcherViewV5{
@@ -32,28 +33,34 @@ func Test_ExportSimulation_GetsModeFromHoverfly(t *testing.T) {
 					},
 					Response: v2.ResponseDetailsViewV5{
 						Status: 200,
-						Body:   `{"simulation": true}`,
+						Body:   responseBody,
 					},
 				},
 			},
 		},
-		v2.MetaView{
+		MetaView: v2.MetaView{
 			SchemaVersion: "v2",
 		},
-	})
+	}
 
-	simulation, err := ExportSimulation(target, "")
+	simulationListBytes, err := json.Marshal(simulationList)
 	Expect(err).To(BeNil())
 
-	Expect(string(simulation)).To(Equal("{\n\t\"simulation\": true\n}"))
+	simulationList.RequestResponsePairs[0].Response.Body = string(simulationListBytes[:])
+	hoverfly.ReplaceSimulation(simulationList)
+	simulationList.RequestResponsePairs[0].Response.Body = responseBody
+
+	view, err := ExportSimulation(target, "")
+	Expect(err).To(BeNil())
+	Expect(view).To(Equal(simulationList))
 }
 
 func Test_ExportSimulation_WithUrlPattern(t *testing.T) {
 	RegisterTestingT(t)
 
-	hoverfly.DeleteSimulation()
-	hoverfly.PutSimulation(v2.SimulationViewV5{
-		v2.DataViewV5{
+	responseBody := `{"simulation": true}`
+	simulationList := v2.SimulationViewV5{
+		DataViewV5: v2.DataViewV5{
 			RequestResponsePairs: []v2.RequestMatcherResponsePairViewV5{
 				{
 					RequestMatcher: v2.RequestMatcherViewV5{
@@ -80,20 +87,26 @@ func Test_ExportSimulation_WithUrlPattern(t *testing.T) {
 					},
 					Response: v2.ResponseDetailsViewV5{
 						Status: 200,
-						Body:   `{"simulation": true}`,
+						Body:   responseBody,
 					},
 				},
 			},
 		},
-		v2.MetaView{
+		MetaView: v2.MetaView{
 			SchemaVersion: "v2",
 		},
-	})
+	}
 
-	simulation, err := ExportSimulation(target, "test-(.+).com")
+	simulationListBytes, err := json.Marshal(simulationList)
 	Expect(err).To(BeNil())
 
-	Expect(string(simulation)).To(Equal("{\n\t\"simulation\": true\n}"))
+	simulationList.RequestResponsePairs[0].Response.Body = string(simulationListBytes[:])
+	hoverfly.ReplaceSimulation(simulationList)
+	simulationList.RequestResponsePairs[0].Response.Body = responseBody
+
+	view, err := ExportSimulation(target, "test-(.+).com")
+	Expect(err).To(BeNil())
+	Expect(view).To(Equal(simulationList))
 }
 
 func Test_ExportSimulation_ErrorsWhen_HoverflyNotAccessible(t *testing.T) {
@@ -234,6 +247,50 @@ func Test_ImportSimulation_ErrorsWhen_HoverflyReturnsNon200(t *testing.T) {
 	err := ImportSimulation(target, "")
 	Expect(err).ToNot(BeNil())
 	Expect(err.Error()).To(Equal("Could not import simulation\n\ntest error"))
+}
+
+func Test_AddSimulation_SendsCorrectHTTPRequest(t *testing.T) {
+	RegisterTestingT(t)
+
+	hoverfly.DeleteSimulation()
+	hoverfly.PutSimulation(v2.SimulationViewV5{
+		v2.DataViewV5{
+			RequestResponsePairs: []v2.RequestMatcherResponsePairViewV5{
+				{
+					RequestMatcher: v2.RequestMatcherViewV5{
+						Method: []v2.MatcherViewV5{
+							{
+								Matcher: matchers.Exact,
+								Value:   "POST",
+							},
+						},
+						Path: []v2.MatcherViewV5{
+							{
+								Matcher: matchers.Exact,
+								Value:   "/api/v2/simulation",
+							},
+						},
+						Body: []v2.MatcherViewV5{
+							{
+								Matcher: "json",
+								Value:   `{"simulation": true}`,
+							},
+						},
+					},
+					Response: v2.ResponseDetailsViewV5{
+						Status: 200,
+						Body:   `{"simulation": true}`,
+					},
+				},
+			},
+		},
+		v2.MetaView{
+			SchemaVersion: "v2",
+		},
+	})
+
+	err := AddSimulation(target, `{"simulation": true}`)
+	Expect(err).To(BeNil())
 }
 
 func Test_DeleteSimulations_SendsCorrectHTTPRequest(t *testing.T) {

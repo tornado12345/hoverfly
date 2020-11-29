@@ -247,6 +247,20 @@ func Test_Journal_GetEntries_WhenDisabledReturnsError(t *testing.T) {
 	Expect(err.Error()).To(Equal("Journal disabled"))
 }
 
+func Test_Journal_GetEntries_WhenErrorShouldReturnDefaultJournalView(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := journal.NewJournal()
+	unit.EntryLimit = 0
+
+	journalView, err := unit.GetEntries(10, 35, nil, nil, "")
+	Expect(err).ToNot(BeNil())
+	Expect(journalView.Journal).To(BeEmpty())
+	Expect(journalView.Offset).To(Equal(10))
+	Expect(journalView.Limit).To(Equal(35))
+	Expect(journalView.Total).To(Equal(0))
+}
+
 func Test_Journal_GetEntries_WithInvalidSortKeyReturnsError(t *testing.T) {
 	RegisterTestingT(t)
 
@@ -382,7 +396,7 @@ func Test_Journal_GetEntries_ReturnPaginationResults(t *testing.T) {
 	Expect(journalView.Offset).To(Equal(4))
 	Expect(journalView.Total).To(Equal(5))
 
-	journalView, err = unit.GetEntries(-1, 2, nil, nil, "")
+	journalView, err = unit.GetEntries(0, 2, nil, nil, "")
 	Expect(err).To(BeNil())
 	Expect(journalView.Journal).To(HaveLen(2))
 	Expect(*journalView.Journal[0].Request.Query).To(Equal("id=0"))
@@ -407,6 +421,16 @@ func Test_Journal_GetEntries_ReturnEmptyPageIfOffsetIsLargerThanTotalElements(t 
 	journalView, err := unit.GetEntries(10, 2, nil, nil, "")
 	Expect(err).To(BeNil())
 	Expect(journalView.Journal).To(HaveLen(0))
+}
+
+func Test_Journal_GetEntries_ReturnRightLimitWhenEmpty(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := journal.NewJournal()
+	journalView, err := unit.GetEntries(0, 100, nil, nil, "")
+	Expect(err).To(BeNil())
+	Expect(journalView.Journal).To(HaveLen(0))
+	Expect(journalView.Limit).To(Equal(100))
 }
 
 func Test_Journal_GetEntries_FilteredByTimeWindow(t *testing.T) {
@@ -434,6 +458,35 @@ func Test_Journal_GetEntries_FilteredByTimeWindow(t *testing.T) {
 	Expect(entries[0].TimeStarted).To(Equal("2018-02-01T02:00:01.000Z"))
 	Expect(entries[1].TimeStarted).To(Equal("2018-02-01T02:00:02.000Z"))
 	Expect(entries[2].TimeStarted).To(Equal("2018-02-01T02:00:03.000Z"))
+}
+
+func Test_Journal_GetFilteredEntries_WillReturnEmptySliceIfNoJournalFound(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := journal.NewJournal()
+
+	request, _ := http.NewRequest("GET", "http://hoverfly.io/path/one?one=1&two=2", bytes.NewBufferString(`{"meta:{"field": "value"}}`))
+	request.Header.Add("Accept", "application/json")
+
+	unit.NewEntry(request, &http.Response{
+		StatusCode: 200,
+		Body:       ioutil.NopCloser(bytes.NewBufferString("test body")),
+	}, "test-mode", time.Now())
+
+	// Body
+	entries, err := unit.GetFilteredEntries(v2.JournalEntryFilterView{
+		Request: &v2.RequestMatcherViewV5{
+			Body: []v2.MatcherViewV5{
+				{
+					Matcher: matchers.Exact,
+					Value:   `{"meta:{"field": "other-value"}}`,
+				},
+			},
+		},
+	})
+	Expect(err).To(BeNil())
+	Expect(entries).ToNot(BeNil())
+	Expect(entries).To(HaveLen(0))
 }
 
 func Test_Journal_GetFilteredEntries_WillFilterOnRequestFields(t *testing.T) {

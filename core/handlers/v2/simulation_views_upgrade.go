@@ -141,7 +141,7 @@ func upgradeV1(originalSimulation SimulationViewV1) SimulationViewV5 {
 }
 
 func upgradeV2(originalSimulation SimulationViewV2) SimulationViewV5 {
-	requestReponsePairs := []RequestMatcherResponsePairViewV5{}
+	requestResponsePairs := []RequestMatcherResponsePairViewV5{}
 
 	for _, requestResponsePairV2 := range originalSimulation.DataViewV2.RequestResponsePairs {
 		schemeMatchers := []MatcherViewV5{}
@@ -198,12 +198,12 @@ func upgradeV2(originalSimulation SimulationViewV2) SimulationViewV5 {
 			},
 		}
 
-		requestReponsePairs = append(requestReponsePairs, requestResponsePair)
+		requestResponsePairs = append(requestResponsePairs, requestResponsePair)
 	}
 
 	return SimulationViewV5{
 		DataViewV5{
-			RequestResponsePairs: requestReponsePairs,
+			RequestResponsePairs: requestResponsePairs,
 			GlobalActions:        originalSimulation.GlobalActions,
 		},
 		newMetaView(originalSimulation.MetaView),

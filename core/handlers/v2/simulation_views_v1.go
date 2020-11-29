@@ -42,6 +42,9 @@ func (this ResponseDetailsView) GetStatus() int { return this.Status }
 // Gets Body - required for interfaces.Response
 func (this ResponseDetailsView) GetBody() string { return this.Body }
 
+// Gets BodyFile - required for interfaces.Response
+func (this ResponseDetailsView) GetBodyFile() string { return "" }
+
 // Gets EncodedBody - required for interfaces.Response
 func (this ResponseDetailsView) GetEncodedBody() bool { return this.EncodedBody }
 
@@ -53,6 +56,12 @@ func (this ResponseDetailsView) GetRemovesState() []string { return nil }
 
 // Gets Headers - required for interfaces.Response
 func (this ResponseDetailsView) GetHeaders() map[string][]string { return this.Headers }
+
+// Gets FixedDelay - required for interfaces.Response
+func (this ResponseDetailsView) GetFixedDelay() int { return 0 }
+
+// Gets LogNormalDelay - required for interfaces.Response
+func (this ResponseDetailsView) GetLogNormalDelay() interfaces.ResponseDelay { return nil }
 
 // RequestDetailsView is used when marshalling and unmarshalling RequestDetails
 type RequestDetailsView struct {
@@ -93,3 +102,9 @@ func (this RequestDetailsView) GetBody() *string { return this.Body }
 
 //Gets Headers - required for interfaces.RequestMatcher
 func (this RequestDetailsView) GetHeaders() map[string][]string { return this.Headers }
+
+// Gets FixedDelay - required for interfaces.Response
+func (this RequestDetailsView) GetFixedDelay() int { return 0 }
+
+// Gets LogNormalDelay - required for interfaces.Response
+func (this RequestDetailsView) GetLogNormalDelay() interfaces.ResponseDelay { return nil }

@@ -149,11 +149,33 @@
 				"body": {
 					"type": "string"
 				},
+				"bodyFile": {
+					"type": "string"
+				},
 				"encodedBody": {
 					"type": "boolean"
 				},
+				"fixedDelay": {
+					"type": "integer"
+				},
 				"headers": {
 					"$ref": "#/definitions/headers"
+				},
+				"logNormalDelay": {
+					"properties": {
+						"max": {
+							"type": "integer"
+						},
+						"mean": {
+							"type": "integer"
+						},
+						"median": {
+							"type": "integer"
+						},
+						"min": {
+							"type": "integer"
+						}
+					}
 				},
 				"removesState": {
 					"type": "array"

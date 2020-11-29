@@ -54,6 +54,9 @@ func (this ResponseDetailsViewV4) GetStatus() int { return this.Status }
 // Gets Body - required for interfaces.Response
 func (this ResponseDetailsViewV4) GetBody() string { return this.Body }
 
+// Gets BodyFile - required for interfaces.Response
+func (this ResponseDetailsViewV4) GetBodyFile() string { return "" }
+
 // Gets EncodedBody - required for interfaces.Response
 func (this ResponseDetailsViewV4) GetEncodedBody() bool { return this.EncodedBody }
 
@@ -67,3 +70,9 @@ func (this ResponseDetailsViewV4) GetRemovesState() []string { return this.Remov
 
 // Gets Headers - required for interfaces.Response
 func (this ResponseDetailsViewV4) GetHeaders() map[string][]string { return this.Headers }
+
+// Gets FixedDelay - required for interfaces.Response
+func (this ResponseDetailsViewV4) GetFixedDelay() int { return 0 }
+
+// Gets LogNormalDelay - required for interfaces.Response
+func (this ResponseDetailsViewV4) GetLogNormalDelay() interfaces.ResponseDelay { return nil }

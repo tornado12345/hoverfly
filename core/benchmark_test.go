@@ -1,6 +1,7 @@
 package hoverfly
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"github.com/SpectoLabs/hoverfly/core/handlers/v2"
@@ -10,6 +11,38 @@ import (
 	"testing"
 	"time"
 )
+
+func BenchmarkPutSimulationAPI(b *testing.B) {
+	RegisterTestingT(b)
+
+	hoverfly := NewHoverflyWithConfiguration(&Configuration{
+		ProxyPort: "8500",
+		AdminPort: "8888",
+		Mode:      "simulate",
+	})
+
+	data, _ := ioutil.ReadFile("../testdata/large_file.json")
+
+	adminApi := AdminApi{}
+
+	go adminApi.StartAdminInterface(hoverfly)
+	time.Sleep(time.Second)
+
+	var resp *http.Response
+	var err error
+
+	b.Run("Import large simulation file", func(b *testing.B) {
+
+		for n := 0; n < b.N; n++ {
+			request, _ := http.NewRequest(http.MethodPut, "http://localhost:8888/api/v2/simulation", bytes.NewReader(data))
+			resp, err = http.DefaultClient.Do(request)
+		}
+	})
+
+	Expect(err).To(BeNil())
+	Expect(resp.StatusCode).To(Equal(200))
+
+}
 
 func BenchmarkProcessRequest(b *testing.B) {
 
@@ -127,10 +160,10 @@ func BenchmarkProcessRequest(b *testing.B) {
 	largeResponse := v2.SimulationViewV5{}
 	_ = json.Unmarshal(bytes, &largeResponse)
 
-	benchmarks := []struct{
-		name string
+	benchmarks := []struct {
+		name       string
 		simulation v2.SimulationViewV5
-	} {
+	}{
 		{"Simple simulation", simulation},
 		{"Templated simulation", templated},
 		{"Large response body", largeResponse},
@@ -152,7 +185,6 @@ func BenchmarkProcessRequest(b *testing.B) {
 			}
 		})
 	}
-
 
 	Expect(resp.StatusCode).To(Equal(200))
 

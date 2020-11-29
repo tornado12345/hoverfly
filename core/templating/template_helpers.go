@@ -9,29 +9,31 @@ import (
 	"github.com/aymerick/raymond"
 	"github.com/pborman/uuid"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/SpectoLabs/hoverfly/core/matching/matchers"
 	"github.com/SpectoLabs/hoverfly/core/util"
 	"github.com/icrowley/fake"
+	log "github.com/sirupsen/logrus"
 )
+
+const defaultDateTimeFormat = "2006-01-02T15:04:05Z07:00"
 
 type templateHelpers struct {
 	now func() time.Time
 }
 
 func (t templateHelpers) iso8601DateTime() string {
-	return t.now().UTC().Format("2006-01-02T15:04:05Z07:00")
+	return t.now().UTC().Format(defaultDateTimeFormat)
 }
 
 func (t templateHelpers) iso8601DateTimePlusDays(days string) string {
 	atoi, _ := strconv.Atoi(days)
-	return t.now().AddDate(0, 0, atoi).UTC().Format("2006-01-02T15:04:05Z07:00")
+	return t.now().AddDate(0, 0, atoi).UTC().Format(defaultDateTimeFormat)
 }
 
 func (t templateHelpers) currentDateTime(format string) string {
 	formatted := t.now().UTC().Format(format)
 	if formatted == format {
-		return t.now().UTC().Format("2006-01-02T15:04:05Z07:00")
+		return t.now().UTC().Format(defaultDateTimeFormat)
 	}
 	return formatted
 }
@@ -44,7 +46,7 @@ func (t templateHelpers) currentDateTimeAdd(addTime string, format string) strin
 	}
 	formatted := now.UTC().Format(format)
 	if formatted == format {
-		return now.UTC().Format("2006-01-02T15:04:05Z07:00")
+		return now.UTC().Format(defaultDateTimeFormat)
 	}
 	return formatted
 }
@@ -57,8 +59,36 @@ func (t templateHelpers) currentDateTimeSubtract(subtractTime string, format str
 	}
 	formatted := now.UTC().Format(format)
 	if formatted == format {
-		return now.UTC().Format("2006-01-02T15:04:05Z07:00")
+		return now.UTC().Format(defaultDateTimeFormat)
 	}
+	return formatted
+}
+
+func (t templateHelpers) nowHelper(offset string, format string) string {
+	now := t.now()
+	if offset != "" {
+		duration, err := ParseDuration(offset)
+		if err == nil {
+			now = now.Add(duration)
+		}
+	}
+
+	var formatted string
+	if format == "" {
+		formatted = now.UTC().Format(defaultDateTimeFormat)
+	} else if format == "unix" {
+		formatted = strconv.FormatInt(now.Unix(), 10)
+	} else if format == "epoch" {
+		formatted = strconv.FormatInt(now.UnixNano()/1000000, 10)
+	} else {
+		formatted = now.UTC().Format(format)
+	}
+
+	// when format is invalid
+	if formatted == format {
+		return now.UTC().Format(defaultDateTimeFormat)
+	}
+
 	return formatted
 }
 
@@ -134,6 +164,10 @@ func (t templateHelpers) xPath(query, toMatch string) string {
 		return ""
 	}
 	return result.String()
+}
+
+func (t templateHelpers) replace(target, oldValue, newValue string) string {
+	return strings.Replace(target, oldValue, newValue, -1)
 }
 
 func prepareJsonPathQuery(query string) string {

@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	v2 "github.com/SpectoLabs/hoverfly/core/handlers/v2"
 	"io/ioutil"
-
 	"net/http"
 	"net/http/httptest"
+	"os"
 
 	"github.com/SpectoLabs/hoverfly/functional-tests"
 	"github.com/dghubble/sling"
@@ -33,7 +34,8 @@ var _ = Describe("When I use hoverctl", func() {
 							"headers": {
 								"Location": ["http://localhost/api/bookings/1"]
 							},
-							"templated": false
+							"templated": false,
+                            "fixedDelay": 0
 						},
 						"request": {
 							"path": [
@@ -81,7 +83,7 @@ var _ = Describe("When I use hoverctl", func() {
 					}
 				},
 				"meta": {
-					"schemaVersion": "v5",
+					"schemaVersion": "v5.1",
 					"hoverflyVersion": "v0.9.2",
 					"timeExported": "2016-11-10T12:27:46Z"
 				}
@@ -176,7 +178,7 @@ var _ = Describe("When I use hoverctl", func() {
 					}
 				},
 				"meta": {
-					"schemaVersion": "v5",
+					"schemaVersion": "v5.1",
 					"hoverflyVersion": "v0.9.2",
 					"timeExported": "2016-11-10T12:27:46Z"
 				}
@@ -184,20 +186,116 @@ var _ = Describe("When I use hoverctl", func() {
 
 		hoverflySimulation = `"pairs":[{"request":{"path":[{"matcher":"exact","value":"/api/bookings"}],"method":[{"matcher":"exact","value":"POST"}],"destination":[{"matcher":"exact","value":"www.my-test.com"}],"scheme":[{"matcher":"exact","value":"http"}],"body":[{"matcher":"exact","value":"{\"flightId\": \"1\"}"}],"headers":{"Content-Type":[{"matcher":"exact","value":"application/json"}]}},"response":{"status":201,"body":"","encodedBody":false,"headers":{"Location":["http://localhost/api/bookings/1"]},"templated":false}}],"globalActions":{"delays":[],"delaysLogNormal":[]}}`
 
-		hoverflyMeta = `"meta":{"schemaVersion":"v5","hoverflyVersion":"v\d+.\d+.\d+(-rc.\d)*","timeExported":`
+		hoverflyMeta = `"meta":{"schemaVersion":"v5.1","hoverflyVersion":"v\d+.\d+.\d+(-rc.\d)*","timeExported":`
 	)
 
 	Describe("with a running hoverfly", func() {
 
 		BeforeEach(func() {
 			hoverfly = functional_tests.NewHoverfly()
-			hoverfly.Start()
+			hoverfly.Start("-response-body-files-path", workingDirectory)
 
 			functional_tests.Run(hoverctlBinary, "targets", "update", "local", "--admin-port", hoverfly.GetAdminPort())
 		})
 
 		AfterEach(func() {
 			hoverfly.Stop()
+		})
+
+		Describe("Exporting simulation with bodyFile", func() {
+			It("can export bodyFile fields", func() {
+				fileName := functional_tests.GenerateFileName()
+				bodyFileName := functional_tests.GenerateFileName()
+				bodyFileContent := `{"success": true}`
+
+				err := ioutil.WriteFile(bodyFileName, []byte(bodyFileContent), 0644)
+				Expect(err).To(BeNil())
+
+				hoverfly.ImportSimulation(`{
+	"data": {
+		"pairs": [
+			{
+				"request": {
+					"path": [
+						{
+							"matcher": "exact",
+							"value": "/api/v1/booking"
+						}
+					]
+				},
+				"response": {
+					"status": 200,
+					"bodyFile": "`+bodyFileName+`"
+				}
+			}
+		]
+	},
+	"meta": {
+		"schemaVersion": "v5.1"
+	}
+}`)
+				// remove bodyFile to be restored by export command later
+				Expect(os.Remove(bodyFileName)).To(BeNil())
+
+				output := functional_tests.Run(hoverctlBinary, "export", fileName)
+				Expect(output).To(ContainSubstring("Successfully exported simulation to " + fileName))
+
+				data, err := ioutil.ReadFile(fileName)
+				Expect(err).To(BeNil())
+
+				var view v2.SimulationViewV5
+				functional_tests.Unmarshal(data, &view)
+
+				Expect(view.DataViewV5.RequestResponsePairs[0].Response.BodyFile).To(Equal(bodyFileName))
+
+				data, err = ioutil.ReadFile(bodyFileName)
+				Expect(err).To(BeNil())
+				Expect(string(data)).To(Equal(bodyFileContent))
+			})
+
+			It("resets body when bodyFile is provided", func() {
+				fileName := functional_tests.GenerateFileName()
+				bodyFileName := functional_tests.GenerateFileName()
+
+				err := ioutil.WriteFile(bodyFileName, []byte(`{"success": true}`), 0644)
+				Expect(err).To(BeNil())
+
+				hoverfly.ImportSimulation(`{
+	"data": {
+		"pairs": [
+			{
+				"request": {
+					"path": [
+						{
+							"matcher": "exact",
+							"value": "/api/v1/booking"
+						}
+					]
+				},
+				"response": {
+					"status": 200,
+					"bodyFile": "`+bodyFileName+`",
+					"body": "testing content"
+				}
+			}
+		]
+	},
+	"meta": {
+		"schemaVersion": "v5.1"
+	}
+}`)
+				output := functional_tests.Run(hoverctlBinary, "export", fileName)
+				Expect(output).To(ContainSubstring("Successfully exported simulation to " + fileName))
+
+				data, err := ioutil.ReadFile(fileName)
+				Expect(err).To(BeNil())
+
+				var view v2.SimulationViewV5
+				functional_tests.Unmarshal(data, &view)
+
+				Expect(view.DataViewV5.RequestResponsePairs[0].Response.Body).To(BeEmpty())
+				Expect(view.DataViewV5.RequestResponsePairs[0].Response.BodyFile).To(Equal(bodyFileName))
+			})
 		})
 
 		Describe("Managing Hoverflies data using the CLI", func() {

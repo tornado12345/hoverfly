@@ -24,20 +24,23 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/SpectoLabs/goproxy"
 	hv "github.com/SpectoLabs/hoverfly/core"
 	"github.com/SpectoLabs/hoverfly/core/authentication/backends"
 	"github.com/SpectoLabs/hoverfly/core/cache"
 	hvc "github.com/SpectoLabs/hoverfly/core/certs"
+	cs "github.com/SpectoLabs/hoverfly/core/cors"
 	"github.com/SpectoLabs/hoverfly/core/handlers"
 	"github.com/SpectoLabs/hoverfly/core/matching"
 	mw "github.com/SpectoLabs/hoverfly/core/middleware"
 	"github.com/SpectoLabs/hoverfly/core/modes"
+	"github.com/SpectoLabs/hoverfly/core/util"
+	log "github.com/sirupsen/logrus"
 )
 
 type arrayFlags []string
@@ -53,6 +56,8 @@ func (i *arrayFlags) Set(value string) error {
 
 var importFlags arrayFlags
 var destinationFlags arrayFlags
+var logOutputFlags arrayFlags
+var responseBodyFilesPath string
 
 const boltBackend = "boltdb"
 const inmemoryBackend = "memory"
@@ -96,15 +101,19 @@ var (
 	upstreamProxy = flag.String("upstream-proxy", "", "Specify an upstream proxy for hoverfly to route traffic through")
 	httpsOnly     = flag.Bool("https-only", false, "Allow only secure secure requests to be proxied by hoverfly")
 
-	databasePath = flag.String("db-path", "", "Database location - supply it to provide specific database location (will be created there if it doesn't exist)")
-	database     = flag.String("db", inmemoryBackend, "Storage to use - 'boltdb' or 'memory' which will not write anything to disk")
-	disableCache = flag.Bool("disable-cache", false, "Disable request/response cache (the cache that sits in front of matching)")
+	databasePath = flag.String("db-path", "", "A path to a BoltDB file with persisted user and token data for authentication (DEPRECATED)")
+	database     = flag.String("db", inmemoryBackend, "Storage to use - 'boltdb' or 'memory' which will not write anything to disk (DEPRECATED)")
+	disableCache = flag.Bool("disable-cache", false, "Disable the request/response cache (the cache that sits in front of matching)")
 
 	logsFormat = flag.String("logs", "plaintext", "Specify format for logs, options are \"plaintext\" and \"json\"")
 	logsSize   = flag.Int("logs-size", 1000, "Set the amount of logs to be stored in memory")
+	logsFile   = flag.String("logs-file", "hoverfly.log", "Specify log file name for output logs")
+	logNoColor = flag.Bool("log-no-color", false, "Disable colors for logging")
 
-	journalSize = flag.Int("journal-size", 1000, "Set the size of request/response journal")
-	cacheSize 	= flag.Int("cache-size", 1000, "Set the size of request/response cache")
+	journalSize   = flag.Int("journal-size", 1000, "Set the size of request/response journal")
+	cacheSize     = flag.Int("cache-size", 1000, "Set the size of request/response cache")
+	cors          = flag.Bool("cors", false, "Enable CORS support")
+	noImportCheck = flag.Bool("no-import-check", false, "Skip duplicate request check when importing simulations")
 
 	clientAuthenticationDestination = flag.String("client-authentication-destination", "", "Regular expression of destination with client authentication")
 	clientAuthenticationClientCert  = flag.String("client-authentication-client-cert", "", "Path to the client certification file used for authentication")
@@ -173,12 +182,26 @@ func init() {
 	goproxy.GoproxyCa = tlsc
 }
 
+func isFlagPassed(name string) bool {
+	found := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			found = true
+		}
+	})
+	return found
+}
+
 func main() {
 	hoverfly := hv.NewHoverfly()
 
 	flag.Var(&importFlags, "import", "Import from file or from URL (i.e. '-import my_service.json' or '-import http://mypage.com/service_x.json'")
 	flag.Var(&destinationFlags, "dest", "Specify which hosts to process (i.e. '-dest fooservice.org -dest barservice.org -dest catservice.org') - other hosts will be ignored will passthrough'")
+	flag.Var(&logOutputFlags, "logs-output", "Specify locations for output logs, options are \"console\" and \"file\" (default \"console\")")
+	flag.StringVar(&responseBodyFilesPath, "response-body-files-path", "", "When a response contains a relative bodyFile, it will be resolved against this path (default is CWD)")
+
 	flag.Parse()
+
 	if *logsFormat == "json" {
 		log.SetFormatter(&log.JSONFormatter{})
 	} else {
@@ -186,6 +209,7 @@ func main() {
 			ForceColors:      true,
 			DisableTimestamp: false,
 			FullTimestamp:    true,
+			DisableColors:    *logNoColor,
 		})
 	}
 
@@ -221,6 +245,59 @@ func main() {
 		}).Fatal("Unknown log-level value")
 	}
 	log.SetLevel(logLevel)
+
+	if len(logOutputFlags) == 0 {
+		// default logging on console when no flag given
+		log.SetOutput(os.Stdout)
+	} else {
+
+		// remove duplicates
+		logOutputMap := map[string]string{}
+		for _, val := range logOutputFlags {
+			logOutputMap[val] = val
+		}
+		_, isLogFile := logOutputMap["file"]
+		if !isLogFile && isFlagPassed("logs-file") {
+			log.WithFields(log.Fields{
+				"logs-file": *logsFile,
+			}).Fatal("-logs-file is not allowed unless -logs-output is set to 'file'.")
+		}
+
+		writers := make([]io.Writer, 0)
+		for _, logsOutput := range logOutputFlags {
+			if logsOutput == "file" {
+				var formatter log.Formatter
+				if *logsFormat == "json" {
+					formatter = &log.JSONFormatter{}
+				} else {
+					formatter = &log.TextFormatter{
+						ForceColors:      true,
+						DisableTimestamp: false,
+						FullTimestamp:    true,
+						DisableColors:    true,
+					}
+				}
+				logFileHook, err := util.NewLogFileHook(util.LogFileConfig{
+					Filename:  *logsFile,
+					Level:     logLevel,
+					Formatter: formatter,
+				})
+				if err == nil {
+					// add hook to write logs into file
+					log.AddHook(logFileHook)
+				} else {
+					log.Fatal("Failed to write log file:" + *logsFile)
+				}
+			} else if logsOutput == "console" {
+				writers = append(writers, os.Stdout)
+			} else {
+				log.WithFields(log.Fields{
+					"logs-output": logsOutput,
+				}).Fatal("Unknown logs output type")
+			}
+		}
+		log.SetOutput(io.MultiWriter(writers...))
+	}
 
 	if *verbose {
 		// Only log the warning severity or above.
@@ -294,6 +371,16 @@ func main() {
 	cfg.HttpsOnly = *httpsOnly
 	cfg.PlainHttpTunneling = *plainHttpTunneling
 
+	if *cors {
+		cfg.CORS = *cs.DefaultCORSConfigs()
+		log.Info("CORS has been enabled")
+	}
+
+	if *noImportCheck {
+		cfg.NoImportCheck = *noImportCheck
+		log.Info("Import check has been disabled")
+	}
+
 	cfg.ClientAuthenticationDestination = *clientAuthenticationDestination
 	cfg.ClientAuthenticationClientCert = *clientAuthenticationClientCert
 	cfg.ClientAuthenticationClientKey = *clientAuthenticationClientKey
@@ -331,6 +418,8 @@ func main() {
 		cfg.Destination = *destination
 	}
 
+	cfg.ResponsesBodyFilesPath = responseBodyFilesPath
+
 	var requestCache cache.FastCache
 	var tokenCache cache.Cache
 	var userCache cache.Cache
@@ -365,7 +454,7 @@ func main() {
 		requestCache, err = cache.NewLRUCache(cfg.CacheSize)
 		if err != nil {
 			log.WithFields(log.Fields{
-				"error":    err.Error(),
+				"error":      err.Error(),
 				"cache-size": cfg.CacheSize,
 			}).Fatal("Failed to create cache")
 		}

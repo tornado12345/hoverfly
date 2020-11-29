@@ -96,6 +96,9 @@ targets:
     authenabled: true
     username: "admin"
     password: "123"
+    simulations: 
+      - foo.json
+      - bar.json
 `)
 
 	_ = viper.ReadConfig(bytes.NewBuffer(configSource))
@@ -113,13 +116,14 @@ targets:
 			},
 
 			"remote": {
-				Name:      "remote",
-				Host:      "hoverfly.cloud",
-				AdminPort: 2345,
-				ProxyPort: 9875,
+				Name:        "remote",
+				Host:        "hoverfly.cloud",
+				AdminPort:   2345,
+				ProxyPort:   9875,
 				AuthEnabled: true,
-				Username: 	"admin",
-				Password: 	"123",
+				Username:    "admin",
+				Password:    "123",
+				Simulations: []string{"foo.json", "bar.json"},
 			},
 		},
 	}))
@@ -131,9 +135,10 @@ func Test_Config_WriteToFile_WritesTheConfigObjectToAFileInAYamlFormat(t *testin
 	config := Config{
 		Targets: map[string]Target{
 			"test-target": {
-				Name:      "test-target",
-				AdminPort: 1234,
-				ProxyPort: 8765,
+				Name:        "test-target",
+				AdminPort:   1234,
+				ProxyPort:   8765,
+				Simulations: []string{"foo.json", "bar.json"},
 			},
 		},
 	}
@@ -155,6 +160,9 @@ func Test_Config_WriteToFile_WritesTheConfigObjectToAFileInAYamlFormat(t *testin
 	Expect(string(data)).To(ContainSubstring("name: test-target"))
 	Expect(string(data)).To(ContainSubstring("admin.port: 1234"))
 	Expect(string(data)).To(ContainSubstring("proxy.port: 8765"))
+	Expect(string(data)).To(ContainSubstring("simulations:"))
+	Expect(string(data)).To(ContainSubstring("- foo.json"))
+	Expect(string(data)).To(ContainSubstring("- bar.json"))
 }
 
 func Test_Config_GetTarget_ReturnsTargetIfAlreadyExists(t *testing.T) {

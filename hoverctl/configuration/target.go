@@ -26,6 +26,8 @@ type Target struct {
 	UpstreamProxyUrl string `yaml:",omitempty"`
 	PACFile          string `yaml:",omitempty"`
 	HttpsOnly        bool   `yaml:",omitempty"`
+	CORS             bool   `yaml:",omitempty"`
+	NoImportCheck    bool   `yaml:",omitempty"`
 
 	ClientAuthenticationDestination string `yaml:",omitempty"`
 	ClientAuthenticationClientCert  string `yaml:",omitempty"`
@@ -35,6 +37,13 @@ type Target struct {
 	AuthEnabled bool
 	Username    string
 	Password    string
+
+	LogLevel string
+
+	Simulations []string `yaml:",omitempty"`
+
+	LogOutput []string `yaml:",omitempty"`
+	LogFile   string   `yaml:",omitempty"`
 }
 
 func NewDefaultTarget() *Target {
@@ -69,6 +78,24 @@ func NewTarget(name, host string, adminPort, proxyPort int) *Target {
 
 func (this Target) BuildFlags() Flags {
 	flags := Flags{}
+
+	hasLogOutputFile := false
+	for _, logOutput := range this.LogOutput {
+		flags = append(flags, "-logs-output="+logOutput)
+		if logOutput == "file" {
+			hasLogOutputFile = true
+		}
+	}
+
+	if this.LogLevel != "" {
+		flags = append(flags, "-log-level="+this.LogLevel)
+	}
+
+	if this.LogFile != "" {
+		flags = append(flags, "-logs-file="+this.LogFile)
+	} else if hasLogOutputFile {
+		flags = append(flags, "-logs-file=hoverfly-"+this.Name+".log")
+	}
 
 	if this.AdminPort != 0 {
 		flags = append(flags, "-ap="+strconv.Itoa(this.AdminPort))
@@ -119,6 +146,10 @@ func (this Target) BuildFlags() Flags {
 		flags = append(flags, "-auth", "-username", this.Username, "-password-hash", string(hashedPassword))
 	}
 
+	if this.CORS {
+		flags = append(flags, "-cors")
+	}
+
 	if this.ClientAuthenticationDestination != "" {
 		flags = append(flags, "-client-authentication-destination="+this.ClientAuthenticationDestination)
 	}
@@ -133,6 +164,16 @@ func (this Target) BuildFlags() Flags {
 
 	if this.ClientAuthenticationCACert != "" {
 		flags = append(flags, "-client-authentication-ca-cert="+this.ClientAuthenticationCACert)
+	}
+
+	if this.NoImportCheck {
+		flags = append(flags, "-no-import-check")
+	}
+
+	if len(this.Simulations) > 0 {
+		for _, val := range this.Simulations {
+			flags = append(flags, "-import="+val)
+		}
 	}
 
 	return flags

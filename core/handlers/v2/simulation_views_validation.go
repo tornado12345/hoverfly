@@ -432,6 +432,61 @@ var responseDefinitionV4 = map[string]interface{}{
 	},
 }
 
+var responseDefinitionV5 = map[string]interface{}{
+	"type": "object",
+	"properties": map[string]interface{}{
+		"body": map[string]interface{}{
+			"type": "string",
+		},
+		"bodyFile": map[string]interface{}{
+			"type": "string",
+		},
+		"encodedBody": map[string]interface{}{
+			"type": "boolean",
+		},
+		"headers": map[string]interface{}{
+			"$ref": "#/definitions/headers",
+		},
+		"status": map[string]interface{}{
+			"type": "integer",
+		},
+		"templated": map[string]interface{}{
+			"type": "boolean",
+		},
+		"removesState": map[string]interface{}{
+			"type": "array",
+		},
+		"transitionsState": map[string]interface{}{
+			"type": "object",
+			"patternProperties": map[string]interface{}{
+				".{1,}": map[string]interface{}{"type": "string"},
+			},
+		},
+		"fixedDelay": map[string]interface{}{
+			"type": "integer",
+		},
+		"logNormalDelay": map[string]interface{}{
+			"properties": map[string]interface{}{
+				"min": map[string]interface{}{
+					"type": "integer",
+				},
+				"max": map[string]interface{}{
+					"type": "integer",
+				},
+				"mean": map[string]interface{}{
+					"type": "integer",
+				},
+				"median": map[string]interface{}{
+					"type": "integer",
+				},
+			},
+		},
+	},
+}
+
+
+
+
 // V5 Schema
 
 var SimulationViewV5Schema = map[string]interface{}{
@@ -477,7 +532,7 @@ var SimulationViewV5Schema = map[string]interface{}{
 	"definitions": map[string]interface{}{
 		"request-response-pair": requestResponsePairDefinition,
 		"request":               requestV5Definition,
-		"response":              responseDefinitionV4,
+		"response":              responseDefinitionV5,
 		"field-matchers":        requestFieldMatchersV5Definition,
 		"headers":               headersDefinition,
 		"request-headers":       v5MatchersMapDefinition,
@@ -549,3 +604,4 @@ var v5MatchersMapDefinition = map[string]interface{}{
 		},
 	},
 }
+

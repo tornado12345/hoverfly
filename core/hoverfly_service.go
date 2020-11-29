@@ -8,7 +8,6 @@ import (
 
 	"strings"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/SpectoLabs/hoverfly/core/handlers/v1"
 	"github.com/SpectoLabs/hoverfly/core/handlers/v2"
 	"github.com/SpectoLabs/hoverfly/core/matching/matchers"
@@ -18,10 +17,11 @@ import (
 	"github.com/SpectoLabs/hoverfly/core/modes"
 	"github.com/SpectoLabs/hoverfly/core/state"
 	"github.com/SpectoLabs/hoverfly/core/util"
+	log "github.com/sirupsen/logrus"
 )
 
-func (this Hoverfly) GetDestination() string {
-	return this.Cfg.Destination
+func (hf *Hoverfly) GetDestination() string {
+	return hf.Cfg.Destination
 }
 
 // UpdateDestination - updates proxy with new destination regexp
@@ -39,17 +39,21 @@ func (hf *Hoverfly) SetDestination(destination string) (err error) {
 	return
 }
 
-func (this Hoverfly) GetMode() v2.ModeView {
-	return this.modeMap[this.Cfg.Mode].View()
+func (hf *Hoverfly) GetMode() v2.ModeView {
+	return hf.modeMap[hf.Cfg.Mode].View()
 }
 
-func (this *Hoverfly) SetMode(mode string) error {
-	return this.SetModeWithArguments(v2.ModeView{
+func (hf *Hoverfly) SetMode(mode string) error {
+	return hf.SetModeWithArguments(v2.ModeView{
 		Mode: mode,
 	})
 }
 
-func (this *Hoverfly) SetModeWithArguments(modeView v2.ModeView) error {
+func (hf *Hoverfly) canSwitchWebserverMode(modeView v2.ModeView) bool {
+	return modeView.Mode != modes.Capture && modeView.Mode != modes.Modify
+}
+
+func (hf *Hoverfly) SetModeWithArguments(modeView v2.ModeView) error {
 
 	availableModes := map[string]bool{
 		modes.Simulate:   true,
@@ -67,9 +71,9 @@ func (this *Hoverfly) SetModeWithArguments(modeView v2.ModeView) error {
 		return fmt.Errorf("Not a valid mode")
 	}
 
-	if this.Cfg.Webserver && modeView.Mode == modes.Capture {
-		log.Error("Cannot change the mode of Hoverfly to capture when running as a webserver")
-		return fmt.Errorf("Cannot change the mode of Hoverfly to capture when running as a webserver")
+	if hf.Cfg.Webserver && !hf.canSwitchWebserverMode(modeView) {
+		log.Errorf("Cannot change the mode of Hoverfly to %s when running as a webserver", modeView.Mode)
+		return fmt.Errorf("Cannot change the mode of Hoverfly to %s when running as a webserver", modeView.Mode)
 	}
 
 	for _, header := range modeView.Arguments.Headers {
@@ -84,38 +88,35 @@ func (this *Hoverfly) SetModeWithArguments(modeView v2.ModeView) error {
 	if modeView.Mode == modes.Simulate {
 		if matchingStrategy == nil {
 			matchingStrategy = util.StringToPointer("strongest")
-		}
-
-		if strings.ToLower(*matchingStrategy) != "strongest" && strings.ToLower(*matchingStrategy) != "first" {
+		} else if strings.ToLower(*matchingStrategy) != "strongest" && strings.ToLower(*matchingStrategy) != "first" {
 			return errors.New("Only matching strategy of 'first' or 'strongest' is permitted")
 		}
 	}
 
-	this.Cfg.SetMode(modeView.Mode)
-	if this.Cfg.GetMode() == "capture" {
-		this.CacheMatcher.FlushCache()
-	} else if this.Cfg.GetMode() == "simulate" {
-		this.CacheMatcher.PreloadCache(*this.Simulation)
-	} else if this.Cfg.GetMode() == "spy" {
-		this.CacheMatcher.PreloadCache(*this.Simulation)
+	hf.Cfg.SetMode(modeView.Mode)
+	if hf.Cfg.GetMode() == "capture" {
+		hf.CacheMatcher.FlushCache()
+	} else if hf.Cfg.GetMode() == "simulate" || hf.Cfg.GetMode() == "spy" {
+		hf.CacheMatcher.PreloadCache(*hf.Simulation)
 	}
 
 	modeArguments := modes.ModeArguments{
-		Headers:          modeView.Arguments.Headers,
-		MatchingStrategy: matchingStrategy,
-		Stateful:         modeView.Arguments.Stateful,
+		Headers:            modeView.Arguments.Headers,
+		MatchingStrategy:   matchingStrategy,
+		Stateful:           modeView.Arguments.Stateful,
+		OverwriteDuplicate: modeView.Arguments.OverwriteDuplicate,
 	}
 
-	this.modeMap[this.Cfg.GetMode()].SetArguments(modeArguments)
+	hf.modeMap[hf.Cfg.GetMode()].SetArguments(modeArguments)
 
 	log.WithFields(log.Fields{
-		"mode": this.Cfg.GetMode(),
+		"mode": hf.Cfg.GetMode(),
 	}).Info("Mode has been changed")
 
 	return nil
 }
 
-func (hf Hoverfly) GetMiddleware() (string, string, string) {
+func (hf *Hoverfly) GetMiddleware() (string, string, string) {
 	script, _ := hf.Cfg.Middleware.GetScript()
 	return hf.Cfg.Middleware.Binary, script, hf.Cfg.Middleware.Remote
 }
@@ -128,7 +129,7 @@ func (hf *Hoverfly) SetMiddleware(binary, script, remote string) error {
 	}
 
 	if binary == "" && script != "" {
-		return fmt.Errorf("Cannot run script with no binary")
+		return fmt.Errorf("cannot run script with no binary")
 	}
 
 	err := newMiddleware.SetBinary(binary)
@@ -171,15 +172,15 @@ func (hf *Hoverfly) SetMiddleware(binary, script, remote string) error {
 	return nil
 }
 
-func (hf Hoverfly) GetRequestCacheCount() (int, error) {
+func (hf *Hoverfly) GetRequestCacheCount() (int, error) {
 	return len(hf.Simulation.GetMatchingPairs()), nil
 }
 
-func (this Hoverfly) GetCache() (v2.CacheView, error) {
-	return this.CacheMatcher.GetAllResponses()
+func (hf *Hoverfly) GetCache() (v2.CacheView, error) {
+	return hf.CacheMatcher.GetAllResponses()
 }
 
-func (hf Hoverfly) FlushCache() error {
+func (hf *Hoverfly) FlushCache() error {
 	return hf.CacheMatcher.FlushCache()
 }
 
@@ -240,11 +241,11 @@ func (hf *Hoverfly) DeleteResponseDelaysLogNormal() {
 	hf.Simulation.ResponseDelaysLogNormal = &models.ResponseDelayLogNormalList{}
 }
 
-func (hf Hoverfly) GetStats() metrics.Stats {
+func (hf *Hoverfly) GetStats() metrics.Stats {
 	return hf.Counter.Flush()
 }
 
-func (hf Hoverfly) GetSimulation() (v2.SimulationViewV5, error) {
+func (hf *Hoverfly) GetSimulation() (v2.SimulationViewV5, error) {
 	pairViews := make([]v2.RequestMatcherResponsePairViewV5, 0)
 
 	for _, v := range hf.Simulation.GetMatchingPairs() {
@@ -257,7 +258,7 @@ func (hf Hoverfly) GetSimulation() (v2.SimulationViewV5, error) {
 		hf.version), nil
 }
 
-func (hf Hoverfly) GetFilteredSimulation(urlPattern string) (v2.SimulationViewV5, error) {
+func (hf *Hoverfly) GetFilteredSimulation(urlPattern string) (v2.SimulationViewV5, error) {
 	pairViews := make([]v2.RequestMatcherResponsePairViewV5, 0)
 	regexPattern, err := regexp.Compile(urlPattern)
 
@@ -286,81 +287,126 @@ func (hf Hoverfly) GetFilteredSimulation(urlPattern string) (v2.SimulationViewV5
 		hf.version), nil
 }
 
-func (this *Hoverfly) PutSimulation(simulationView v2.SimulationViewV5) v2.SimulationImportResult {
-	result := this.importRequestResponsePairViews(simulationView.DataViewV5.RequestResponsePairs)
+func (hf *Hoverfly) putOrReplaceSimulation(simulationView v2.SimulationViewV5, overrideExisting bool) v2.SimulationImportResult {
+	bodyFilesResult := hf.readResponseBodyFiles(simulationView.RequestResponsePairs)
+	if bodyFilesResult.GetError() != nil {
+		return bodyFilesResult
+	}
 
-	result.AddError(this.SetResponseDelays(v1.ResponseDelayPayloadView{Data: simulationView.GlobalActions.Delays}))
-	result.AddError(this.SetResponseDelaysLogNormal(v1.ResponseDelayLogNormalPayloadView{Data: simulationView.GlobalActions.DelaysLogNormal}))
+	if overrideExisting {
+		hf.DeleteSimulation()
+	}
+
+	result := hf.importRequestResponsePairViews(simulationView.DataViewV5.RequestResponsePairs)
+	if result.GetError() != nil {
+		return result
+	}
+
+	if err := hf.SetResponseDelays(v1.ResponseDelayPayloadView{Data: simulationView.GlobalActions.Delays}); err != nil {
+		result.SetError(err)
+		return result
+	}
+
+	if err := hf.SetResponseDelaysLogNormal(v1.ResponseDelayLogNormalPayloadView{Data: simulationView.GlobalActions.DelaysLogNormal}); err != nil {
+		result.SetError(err)
+		return result
+	}
+
+	for _, warning := range bodyFilesResult.WarningMessages {
+		result.WarningMessages = append(result.WarningMessages, warning)
+	}
 
 	return result
 }
 
-func (this *Hoverfly) DeleteSimulation() {
-	this.Simulation.DeleteMatchingPairs()
-	this.DeleteResponseDelays()
-	this.DeleteResponseDelaysLogNormal()
-	this.FlushCache()
+
+func (hf *Hoverfly) ReplaceSimulation(simulationView v2.SimulationViewV5) v2.SimulationImportResult {
+	return hf.putOrReplaceSimulation(simulationView, true)
 }
 
-func (this Hoverfly) GetVersion() string {
-	return this.version
+func (hf *Hoverfly) PutSimulation(simulationView v2.SimulationViewV5) v2.SimulationImportResult {
+	return hf.putOrReplaceSimulation(simulationView, false)
 }
 
-func (this Hoverfly) GetUpstreamProxy() string {
-	return this.Cfg.UpstreamProxy
+func (hf *Hoverfly) DeleteSimulation() {
+	hf.Simulation.DeleteMatchingPairs()
+	hf.DeleteResponseDelays()
+	hf.DeleteResponseDelaysLogNormal()
+	hf.FlushCache()
 }
 
-func (this Hoverfly) IsWebServer() bool {
-
-	return this.Cfg.Webserver
+func (hf *Hoverfly) GetVersion() string {
+	return hf.version
 }
 
-func (this Hoverfly) IsMiddlewareSet() bool {
-	return this.Cfg.Middleware.IsSet()
+func (hf *Hoverfly) GetUpstreamProxy() string {
+	return hf.Cfg.UpstreamProxy
 }
 
-func (this *Hoverfly) GetState() map[string]string {
-	return this.state.State
+func (hf *Hoverfly) IsWebServer() bool {
+
+	return hf.Cfg.Webserver
 }
 
-func (this *Hoverfly) SetState(state map[string]string) {
-	this.state.SetState(state)
+func (hf *Hoverfly) IsMiddlewareSet() bool {
+	return hf.Cfg.Middleware.IsSet()
 }
 
-func (this *Hoverfly) PatchState(toPatch map[string]string) {
-	this.state.PatchState(toPatch)
-}
-
-func (this *Hoverfly) ClearState() {
-	this.state = state.NewState()
-}
-
-func (this *Hoverfly) GetDiff() map[v2.SimpleRequestDefinitionView][]v2.DiffReport {
-	return this.responsesDiff
-}
-
-func (this *Hoverfly) ClearDiff() {
-	this.responsesDiff = make(map[v2.SimpleRequestDefinitionView][]v2.DiffReport)
-}
-
-func (this *Hoverfly) AddDiff(requestView v2.SimpleRequestDefinitionView, diffReport v2.DiffReport) {
-	if len(diffReport.DiffEntries) > 0 {
-		diffs := this.responsesDiff[requestView]
-		this.responsesDiff[requestView] = append(diffs, diffReport)
+func (hf *Hoverfly) GetCORS() v2.CORSView {
+	cors := hf.Cfg.CORS
+	return v2.CORSView{
+		Enabled:          cors.Enabled,
+		AllowOrigin:      cors.AllowOrigin,
+		AllowMethods:     cors.AllowMethods,
+		AllowHeaders:     cors.AllowHeaders,
+		PreflightMaxAge:  cors.PreflightMaxAge,
+		AllowCredentials: cors.AllowCredentials,
+		ExposeHeaders:    cors.ExposeHeaders,
 	}
 }
 
-func (this *Hoverfly) GetPACFile() []byte {
-	return this.Cfg.PACFile
+func (hf *Hoverfly) GetState() map[string]string {
+	return hf.state.State
 }
 
-func (this *Hoverfly) SetPACFile(pacFile []byte) {
+func (hf *Hoverfly) SetState(state map[string]string) {
+	hf.state.SetState(state)
+}
+
+func (hf *Hoverfly) PatchState(toPatch map[string]string) {
+	hf.state.PatchState(toPatch)
+}
+
+func (hf *Hoverfly) ClearState() {
+	hf.state = state.NewState()
+}
+
+func (hf *Hoverfly) GetDiff() map[v2.SimpleRequestDefinitionView][]v2.DiffReport {
+	return hf.responsesDiff
+}
+
+func (hf *Hoverfly) ClearDiff() {
+	hf.responsesDiff = make(map[v2.SimpleRequestDefinitionView][]v2.DiffReport)
+}
+
+func (hf *Hoverfly) AddDiff(requestView v2.SimpleRequestDefinitionView, diffReport v2.DiffReport) {
+	if len(diffReport.DiffEntries) > 0 {
+		diffs := hf.responsesDiff[requestView]
+		hf.responsesDiff[requestView] = append(diffs, diffReport)
+	}
+}
+
+func (hf *Hoverfly) GetPACFile() []byte {
+	return hf.Cfg.PACFile
+}
+
+func (hf *Hoverfly) SetPACFile(pacFile []byte) {
 	if len(pacFile) == 0 {
 		pacFile = nil
 	}
-	this.Cfg.PACFile = pacFile
+	hf.Cfg.PACFile = pacFile
 }
 
-func (this *Hoverfly) DeletePACFile() {
-	this.Cfg.PACFile = nil
+func (hf *Hoverfly) DeletePACFile() {
+	hf.Cfg.PACFile = nil
 }

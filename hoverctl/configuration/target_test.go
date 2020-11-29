@@ -236,3 +236,36 @@ func Test_Target_BuildFlags_CanBuildFlagsInCorrectOrderWithAllVariables(t *testi
 	Expect(unit.BuildFlags()[2]).To(Equal("-key=key.pem"))
 	Expect(unit.BuildFlags()[3]).To(Equal("-tls-verification=false"))
 }
+
+func Test_Target_BuildFlags_SetImportFlags(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := Target{
+		Simulations: []string{"foo.json", "bar.json"},
+	}
+
+	Expect(unit.BuildFlags()).To(HaveLen(2))
+	Expect(unit.BuildFlags()[0]).To(Equal("-import=foo.json"))
+	Expect(unit.BuildFlags()[1]).To(Equal("-import=bar.json"))
+}
+
+func Test_Target_BuildFlags_AddSkipImportCheckFlagWhenTrue(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := Target{
+		NoImportCheck: true,
+	}
+
+	Expect(unit.BuildFlags()).To(HaveLen(1))
+	Expect(unit.BuildFlags()[0]).To(Equal("-no-import-check"))
+}
+
+func Test_Target_BuildFlags_DoesNotAddSkipImportCheckFlagWhenFalse(t *testing.T) {
+	RegisterTestingT(t)
+
+	unit := Target{
+		NoImportCheck: false,
+	}
+
+	Expect(unit.BuildFlags()).To(HaveLen(0))
+}

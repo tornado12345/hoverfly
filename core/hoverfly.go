@@ -2,10 +2,10 @@ package hoverfly
 
 import (
 	"fmt"
-	log "github.com/Sirupsen/logrus"
 	"github.com/SpectoLabs/goproxy"
 	"github.com/SpectoLabs/hoverfly/core/authentication/backends"
 	"github.com/SpectoLabs/hoverfly/core/cache"
+	"github.com/SpectoLabs/hoverfly/core/delay"
 	"github.com/SpectoLabs/hoverfly/core/handlers/v2"
 	"github.com/SpectoLabs/hoverfly/core/journal"
 	"github.com/SpectoLabs/hoverfly/core/matching"
@@ -14,9 +14,11 @@ import (
 	"github.com/SpectoLabs/hoverfly/core/modes"
 	"github.com/SpectoLabs/hoverfly/core/state"
 	"github.com/SpectoLabs/hoverfly/core/templating"
+	log "github.com/sirupsen/logrus"
 	"net"
 	"net/http"
 	"sync"
+	"time"
 )
 
 // Hoverfly provides access to hoverfly - updating/starting/stopping proxy, http client and configuration, cache access
@@ -61,7 +63,7 @@ func NewHoverfly() *Hoverfly {
 		responsesDiff:  make(map[v2.SimpleRequestDefinitionView][]v2.DiffReport),
 	}
 
-	hoverfly.version = "v1.0.0-rc.2"
+	hoverfly.version = "v1.3.1"
 
 	log.AddHook(hoverfly.StoreLogsHook)
 
@@ -181,21 +183,58 @@ func (hf *Hoverfly) StopProxy() {
 // processRequest - processes incoming requests and based on proxy state (record/playback)
 // returns HTTP response.
 func (hf *Hoverfly) processRequest(req *http.Request) *http.Response {
+	if hf.Cfg.CORS.Enabled {
+		response := hf.Cfg.CORS.InterceptPreflightRequest(req)
+		if response != nil {
+			return response
+		}
+	}
 	requestDetails, err := models.NewRequestDetailsFromHttpRequest(req)
 	if err != nil {
-		return modes.ErrorResponse(req, err, "Could not interpret HTTP request")
+		return modes.ErrorResponse(req, err, "Could not interpret HTTP request").Response
 	}
 
 	modeName := hf.Cfg.GetMode()
 	mode := hf.modeMap[modeName]
-	response, err := mode.Process(req, requestDetails)
+	result, err := mode.Process(req, requestDetails)
 
-	// Don't delete the error
-	// and definitely don't delay people in capture mode
-	if err != nil || modeName == modes.Capture {
-		return response
+	if err == nil && hf.Cfg.CORS.Enabled {
+		hf.Cfg.CORS.AddCORSHeaders(req, result.Response)
 	}
 
+	// and definitely don't delay people in capture mode
+	// Don't delete the error
+	if err != nil || modeName == modes.Capture {
+		return result.Response
+	}
+
+	if result.IsResponseDelayable() {
+		log.Debug("Applying response delay")
+		hf.applyResponseDelay(result)
+	} else {
+		log.Debug("Applying global delay")
+		hf.applyGlobalDelay(requestDetails)
+	}
+
+	return result.Response
+}
+
+func (hf *Hoverfly) applyResponseDelay(result modes.ProcessResult) {
+	if result.FixedDelay > 0 {
+		time.Sleep(time.Duration(result.FixedDelay) * time.Millisecond)
+	}
+
+	if result.LogNormalDelay != nil {
+		logNormalDelay := delay.NewLogNormalGenerator(
+			result.LogNormalDelay.Min, result.LogNormalDelay.Max,
+			result.LogNormalDelay.Mean, result.LogNormalDelay.Median,
+		).GenerateDelay()
+
+		time.Sleep(time.Duration(logNormalDelay) * time.Millisecond)
+	}
+}
+
+func (hf *Hoverfly) applyGlobalDelay(requestDetails models.RequestDetails) {
 	respDelay := hf.Simulation.ResponseDelays.GetDelay(requestDetails)
 	if respDelay != nil {
 		respDelay.Execute()
@@ -205,6 +244,4 @@ func (hf *Hoverfly) processRequest(req *http.Request) *http.Response {
 	if respDelayLogNormal != nil {
 		respDelayLogNormal.Execute()
 	}
-
-	return response
 }

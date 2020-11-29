@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	log "github.com/Sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 	"k8s.io/client-go/util/jsonpath"
 )
 
@@ -35,7 +35,7 @@ func JsonPathExecution(matchString, toMatch string) (string, error) {
 		return "", err
 	}
 
-	var data map[string]interface{}
+	var data interface{}
 	if err := json.Unmarshal([]byte(toMatch), &data); err != nil {
 		log.Errorf("Failed to unmarshal body to JSON: %s", err.Error())
 		return "", err

@@ -4,7 +4,7 @@ import (
 	"io/ioutil"
 	"path/filepath"
 
-	log "github.com/Sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v2"
 )
@@ -12,7 +12,7 @@ import (
 type Flags []string
 
 type Config struct {
-	DefaultTarget string            `mapstructure:"default" yaml:"default"`	// viper uses mapstructure to unmarshall
+	DefaultTarget string            `mapstructure:"default" yaml:"default"` // viper uses mapstructure to unmarshall
 	Targets       map[string]Target `yaml:"targets"`
 }
 
@@ -46,7 +46,7 @@ func parseConfig() *Config {
 	defaultTarget := NewDefaultTarget()
 
 	// Initialize local target
-	if config.Targets["local"] == (Target{}) {
+	if val, present := config.Targets["local"]; !present || val.Name == "" {
 		config.Targets["local"] = *defaultTarget
 	}
 
